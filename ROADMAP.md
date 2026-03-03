@@ -379,30 +379,19 @@ Generate multiple sizes + srcset:
 
 ## 🏢 V4.0 - Integrations (Target: Q4 2026)
 
-### #21 - WordPress Plugin
+### #21 - Cloudflare Images Integration
 **Priority:** P0  
-**Effort:** 20h  
-**Impact:** Critical
-
-- Auto-optimize on upload
-- Bulk optimize existing media library
-- Serve WebP with fallback
-- Settings page in WP admin
-
----
-
-### #22 - Cloudflare Images Integration
-**Priority:** P1  
 **Effort:** 12h  
 **Impact:** High
 
 - Upload optimized images to Cloudflare
 - Generate URLs with transformations
 - Automatic CDN distribution
+- Batch upload support
 
 ---
 
-### #23 - REST API
+### #22 - REST API
 **Priority:** P1  
 **Effort:** 16h  
 **Impact:** High
@@ -467,8 +456,7 @@ Response:
 - Srcset: 8h
 - Dedup: 4h
 
-### V4.0 (Total: ~48h)
-- WordPress: 20h
+### V4.0 (Total: ~28h)
 - Cloudflare: 12h
 - API: 16h
 
@@ -496,7 +484,7 @@ Response:
 11. CLI
 12. CI/CD
 13. Watch Mode
-14. WordPress Plugin
+14. Cloud Integrations
 
 ---
 

@@ -120,7 +120,7 @@ See [GUIDE.md](GUIDE.md) for:
 - **V1** (Current): Desktop Pro - batch conversion + reports ✅
 - **V2** (Q2 2026): CLI for CI/CD
 - **V3** (Q3 2026): `<picture>` snippet generator
-- **V4** (Q4 2026): WordPress plugin + CDN integrations
+- **V4** (Q4 2026): Cloud integrations (Cloudflare, S3)
 
 ## 🐛 Troubleshooting
 

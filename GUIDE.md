@@ -136,7 +136,7 @@ sudo apt install imagemagick
 
 - **V2**: CLI para CI/CD (`brjoy-img optimize ./public`)
 - **V3**: Gerador de snippets `<picture>` com fallback
-- **V4**: Plugin WordPress e integrações CDN
+- **V4**: Cloud integrations (Cloudflare, S3) and CDN
 
 ---
 

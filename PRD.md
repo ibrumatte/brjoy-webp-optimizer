@@ -299,7 +299,6 @@ Permitir filtrar/excluir arquivos antes de converter.
 - Gerador de snippets `<picture>`
 - Responsive variants (srcset)
 - Deduplicação por hash
-- Plugin WordPress
 - Integração CDN
 - Preview antes/depois visual
 - Batch processing com múltiplos tamanhos
@@ -484,8 +483,8 @@ Permitir filtrar/excluir arquivos antes de converter.
 - Deduplicação por hash
 
 ### V4 - Integrações (Q4 2026)
-- Plugin WordPress
 - Integração Cloudflare Images
+- Integração AWS S3
 - API REST para automação
 
 ---

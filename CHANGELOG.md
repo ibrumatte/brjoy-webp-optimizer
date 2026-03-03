@@ -225,6 +225,6 @@ python3 brjoy-converter
 - [ ] Deduplicação por hash
 
 ### V4.0 (Q4 2026)
-- [ ] Plugin WordPress
+- [ ] Cloud integrations (Cloudflare, S3)
 - [ ] Integração Cloudflare Images
 - [ ] API REST

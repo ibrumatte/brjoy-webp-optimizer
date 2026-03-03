@@ -138,8 +138,8 @@ Pipeline desktop de otimização de imagens para websites. Converte JPG/PNG → 
 - Pro: $9/mês (CI/CD, presets ilimitados)
 
 ### V3 - Enterprise
-- Plugin WordPress: $29/mês
-- Integração CDN: $49/mês
+- Integração CDN: $29/mês
+- API REST: $49/mês
 - White-label: $99/mês
 
 ---
@@ -173,8 +173,8 @@ Pipeline desktop de otimização de imagens para websites. Converte JPG/PNG → 
 - Deduplicação
 
 ### V4.0 (Q4 2026)
-- Plugin WordPress
-- Integração CDN
+- Integração Cloudflare
+- Integração S3
 - API REST
 
 ---

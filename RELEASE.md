@@ -34,7 +34,7 @@ Teste 2: E-commerce (2.147 imagens)
 ├─ Final: 298 MB
 └─ Economia: 902 MB (75%) ✅
 
-Teste 3: Blog WordPress (89 imagens)
+Teste 3: E-commerce Site (89 imagens)
 ├─ Original: 45.2 MB
 ├─ Final: 12.8 MB
 └─ Economia: 32.4 MB (72%) ✅
