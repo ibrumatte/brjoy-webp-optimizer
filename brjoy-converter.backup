@@ -1,0 +1,960 @@
+#!/usr/bin/env python3
+import os
+import sys
+
+os.environ["GDK_BACKEND"] = "x11"
+
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+import subprocess
+from pathlib import Path
+import threading
+from datetime import datetime
+import platform
+
+# Try to import drag and drop support
+try:
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+    DND_AVAILABLE = True
+except ImportError:
+    DND_AVAILABLE = False
+
+# UI Constants
+COLORS = {
+    "bg": "#f5f5f7",
+    "card": "#ffffff",
+    "border": "#e6e6ea",
+    "text": "#111111",
+    "text_secondary": "#6b7280",
+    "text_muted": "#9ca3af",
+    "primary": "#0a84ff",
+    "primary_hover": "#0070e0",
+    "primary_disabled": "#b3d9ff",
+    "secondary": "#f5f5f7",
+    "secondary_hover": "#e8e8ea",
+    "drop_hover": "#eaf2ff",
+}
+
+PRESETS = {
+    "Instagram 4:5": {"aspect": "4:5", "resize": True, "width": 1080, "height": 1350, "crop": True},
+    "Quadrado 1:1": {"aspect": "1:1", "resize": True, "width": 1080, "height": 1080, "crop": True},
+    "Story 9:16": {"aspect": "9:16", "resize": True, "width": 1080, "height": 1920, "crop": True},
+    "Thumb 1280px": {"aspect": None, "resize": True, "width": 1280, "height": None, "crop": False},
+}
+
+SUPPORTED_EXTENSIONS = {".heic", ".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".gif", ".webp", ".avif"}
+
+def get_system_font():
+    """Retorna fonte apropriada para o sistema"""
+    system = platform.system()
+    if system == "Darwin":
+        return "SF Pro Text"
+    elif system == "Linux":
+        # Tentar Inter ou Ubuntu
+        return "Inter"
+    return "Arial"
+
+def setup_styles():
+    """Configura estilos ttk modernos"""
+    style = ttk.Style()
+    style.theme_use("clam")
+    
+    font_family = get_system_font()
+    
+    # Frames
+    style.configure("App.TFrame", background=COLORS["bg"])
+    style.configure("Card.TFrame", background=COLORS["card"], relief="flat", borderwidth=1)
+    
+    # Labels
+    style.configure("Header.TLabel", background=COLORS["card"], foreground=COLORS["text"], 
+                   font=(font_family, 14, "bold"))
+    style.configure("Sub.TLabel", background=COLORS["card"], foreground=COLORS["text_secondary"], 
+                   font=(font_family, 9))
+    style.configure("Muted.TLabel", background=COLORS["card"], foreground=COLORS["text_muted"], 
+                   font=(font_family, 9))
+    style.configure("Status.TLabel", background=COLORS["card"], foreground=COLORS["text_secondary"], 
+                   font=(font_family, 9))
+    style.configure("SectionTitle.TLabel", background=COLORS["card"], foreground=COLORS["text"], 
+                   font=(font_family, 10, "bold"))
+    style.configure("SectionSub.TLabel", background=COLORS["card"], foreground=COLORS["text_secondary"], 
+                   font=(font_family, 9, "bold"))
+    
+    # Buttons
+    style.configure("Primary.TButton", 
+                   font=(font_family, 10, "bold"),
+                   padding=(24, 10),
+                   relief="flat",
+                   borderwidth=0)
+    style.map("Primary.TButton",
+             background=[("active", COLORS["primary_hover"]), 
+                        ("disabled", COLORS["primary_disabled"]),
+                        ("!disabled", COLORS["primary"])],
+             foreground=[("disabled", "#ffffff"), ("!disabled", "#ffffff")])
+    
+    style.configure("Secondary.TButton",
+                   font=(font_family, 9),
+                   padding=(12, 5),
+                   relief="flat")
+    style.map("Secondary.TButton",
+             background=[("active", COLORS["secondary_hover"]), 
+                        ("!disabled", COLORS["secondary"])],
+             foreground=[("!disabled", COLORS["text"])])
+    
+    # Checkbutton e Radiobutton
+    style.configure("TCheckbutton", background=COLORS["card"], foreground=COLORS["text"],
+                   font=(font_family, 9))
+    style.configure("TRadiobutton", background=COLORS["card"], foreground=COLORS["text"],
+                   font=(font_family, 9))
+    
+    # Entry
+    style.configure("TEntry", fieldbackground=COLORS["secondary"], foreground=COLORS["text"],
+                   borderwidth=0, relief="flat")
+    
+    # Combobox
+    style.configure("TCombobox", fieldbackground=COLORS["secondary"], foreground=COLORS["text"],
+                   borderwidth=0, relief="flat", arrowsize=12)
+    
+    # Progressbar
+    style.configure("TProgressbar", background=COLORS["primary"], troughcolor=COLORS["secondary"],
+                   borderwidth=0, thickness=6)
+    
+    return style
+
+
+class ConversorHEIC:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("BrJoy Image Converter")
+        self.root.geometry("800x600")
+        self.root.configure(bg=COLORS["bg"])
+        self.root.resizable(True, True)
+        self.root.minsize(700, 500)
+        
+        # Setup styles
+        self.style = setup_styles()
+
+        try:
+            icon_path = Path.home() / ".local/share/brjoy-image-converter/icon.png"
+            if icon_path.exists():
+                icon = tk.PhotoImage(file=str(icon_path))
+                self.root.iconphoto(True, icon)
+        except Exception:
+            pass
+
+        # State
+        self.formato = tk.StringVar(value="webp")
+        self.arquivos = []
+        self.pasta_saida = tk.StringVar(value="")
+        self.redimensionar = tk.BooleanVar(value=False)
+        self.largura_max = tk.StringVar(value="1920")
+        self.altura_max = tk.StringVar(value="")
+        self.recorte_1x1 = tk.BooleanVar(value=False)
+        self.aspect_ratio = tk.StringVar(value="")
+        self.convertendo = False
+        self.drop_active = False
+
+        self.criar_interface()
+        self.setup_keyboard_shortcuts()
+        self.atualizar_estado()
+        self.verificar_dependencias()
+
+    def setup_keyboard_shortcuts(self):
+        self.root.bind("<Control-o>", lambda e: self.selecionar_arquivos() if not self.convertendo else None)
+        self.root.bind("<Control-O>", lambda e: self.selecionar_arquivos() if not self.convertendo else None)
+        self.root.bind("<Delete>", lambda e: self.remover_selecionados() if not self.convertendo else None)
+        self.root.bind("<Control-Return>", lambda e: self.converter() if len(self.arquivos) > 0 and not self.convertendo else None)
+            return "break"
+        self.selecionar_arquivos()
+        return "break"
+
+    def _shortcut_delete(self, event=None):
+        if self.convertendo:
+            return "break"
+        self.remover_selecionados()
+        return "break"
+
+    def _shortcut_convert(self, event=None):
+        if self.convertendo:
+            return "break"
+        if len(self.arquivos) > 0:
+            self.converter()
+        return "break"
+
+    def remover_selecionados(self):
+        if self.convertendo or not self.tree:
+            return
+
+        selecionados = self.tree.selection()
+        if not selecionados:
+            return
+
+        indices_remover = []
+        for item_id in selecionados:
+            try:
+                idx = self.tree.index(item_id)
+                indices_remover.append(idx)
+            except Exception:
+                continue
+
+        for idx in sorted(indices_remover, reverse=True):
+            if 0 <= idx < len(self.arquivos):
+                del self.arquivos[idx]
+
+        self.atualizar_lista()
+
+    # ---------- Presets ----------
+    def aplicar_preset(self, event=None):
+        preset_name = self.preset_var.get()
+        if not preset_name or preset_name not in PRESETS:
+            return
+
+        preset = PRESETS[preset_name]
+
+        if preset["aspect"]:
+            self.aspect_ratio.set(preset["aspect"])
+            if preset["aspect"] == "1:1":
+                self.recorte_1x1.set(True)
+            else:
+                self.recorte_1x1.set(False)
+        else:
+            self.aspect_ratio.set("")
+            self.recorte_1x1.set(False)
+
+        self.redimensionar.set(bool(preset["resize"]))
+
+        if preset.get("width"):
+            self.largura_max.set(str(preset["width"]))
+
+        if preset.get("height"):
+            self.altura_max.set(str(preset["height"]))
+        else:
+            self.altura_max.set("")
+
+        self.toggle_resize()
+        self.atualizar_estado()
+
+    # ---------- Drag and drop ----------
+    def setup_drag_drop(self, widget):
+        if not DND_AVAILABLE:
+            return
+
+        widget.drop_target_register(DND_FILES)
+        widget.dnd_bind("<<Drop>>", self.on_drop)
+        widget.dnd_bind("<<DragEnter>>", self.on_drag_enter)
+        widget.dnd_bind("<<DragLeave>>", self.on_drag_leave)
+
+    def on_drag_enter(self, event=None):
+        if self.convertendo:
+            return
+        try:
+            self.tree.configure(style="FilesDrop.Treeview")
+        except Exception:
+            pass
+
+    def on_drag_leave(self, event=None):
+        try:
+            self.tree.configure(style="Files.Treeview")
+        except Exception:
+            pass
+
+    def _add_paths(self, paths):
+        novos = []
+        for p in paths:
+            p = p.strip("{}")
+            path = Path(p)
+
+            if path.is_file():
+                if path.suffix.lower() in SUPPORTED_EXTENSIONS:
+                    sp = str(path)
+                    if sp not in self.arquivos:
+                        novos.append(sp)
+
+            elif path.is_dir():
+                count = 0
+                # recursivo, mas com limite defensivo
+                try:
+                    for img_path in path.rglob("*"):
+                        if count >= 200:
+                            break
+                        if img_path.is_file() and img_path.suffix.lower() in SUPPORTED_EXTENSIONS:
+                            sp = str(img_path)
+                            if sp not in self.arquivos:
+                                novos.append(sp)
+                                count += 1
+                except Exception:
+                    pass
+
+        if novos:
+            self.arquivos.extend(novos)
+            self.atualizar_lista()
+
+    def on_drop(self, event):
+        self.on_drag_leave()
+
+        if self.convertendo:
+            return
+
+        try:
+            files = self.root.tk.splitlist(event.data)
+        except Exception:
+            files = [event.data]
+
+        self._add_paths(files)
+
+    # ---------- State updates ----------
+    def atualizar_estado(self):
+        n = len(self.arquivos)
+
+        if n > 0 and not self.convertendo:
+            self.btn_converter.config(
+                state=tk.NORMAL, bg=COLORS["primary"], fg="#ffffff", text=f"✨ Converter ({n})"
+            )
+        else:
+            self.btn_converter.config(
+                state=tk.DISABLED, bg=COLORS["secondary"], fg=COLORS["text_muted"], text="✨ Converter (0)"
+            )
+
+        if n > 0 and not self.convertendo:
+            self.btn_limpar.config(state=tk.NORMAL)
+        else:
+            self.btn_limpar.config(state=tk.DISABLED)
+
+        if self.convertendo:
+            # status é atualizado durante conversão
+            pass
+        elif n == 0:
+            self.status_label.config(text="Nenhum arquivo • Ctrl+O para adicionar")
+        else:
+            self.status_label.config(text=f"Pronto • {n} arquivo{'s' if n > 1 else ''} • Ctrl+Enter para converter")
+
+        if n == 0:
+            self.empty_label.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+        else:
+            self.empty_label.place_forget()
+
+        estado = tk.DISABLED if self.convertendo else tk.NORMAL
+        self.btn_adicionar.config(state=estado)
+        self.btn_pasta.config(state=estado)
+
+        self.preset_combo.config(state="readonly" if not self.convertendo else tk.DISABLED)
+        for widget in [self.radio_webp, self.radio_png, self.check_recorte, self.check_resize]:
+            widget.config(state=estado)
+
+        # inputs que dependem do checkbox
+        self.toggle_resize()
+
+    def toggle_resize(self):
+        if self.redimensionar.get() and not self.convertendo:
+            self.largura_entry.config(state=tk.NORMAL, bg="#ffffff")
+        else:
+            self.largura_entry.config(state=tk.DISABLED, bg=COLORS["secondary"])
+
+    # ---------- Dependencies ----------
+    def verificar_dependencias(self):
+        try:
+            subprocess.run(["convert", "-version"], capture_output=True, check=True)
+            subprocess.run(["identify", "-version"], capture_output=True, check=True)
+        except Exception:
+            resposta = messagebox.askyesno(
+                "ImageMagick não encontrado",
+                "O ImageMagick é necessário para converter imagens.\n\nDeseja instalar agora?",
+            )
+            if resposta:
+                try:
+                    subprocess.run(["x-terminal-emulator", "-e", "sudo apt install imagemagick"])
+                except Exception:
+                    pass
+
+    # ---------- Output folder ----------
+    def criar_pasta_sessao(self):
+        if not self.pasta_saida.get():
+            pasta_origem = Path(self.arquivos[0]).parent
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+            try:
+                result = subprocess.run(
+                    [
+                        "zenity",
+                        "--entry",
+                        "--title=Nome da pasta",
+                        "--text=Nome para a pasta de saída:",
+                        "--entry-text=BrJoy_" + timestamp,
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+
+                if result.returncode == 0 and result.stdout.strip():
+                    nome_pasta = result.stdout.strip()
+                else:
+                    nome_pasta = "BrJoy_" + timestamp
+            except Exception:
+                nome_pasta = "BrJoy_" + timestamp
+
+            pasta_final = pasta_origem / nome_pasta
+            pasta_final.mkdir(parents=True, exist_ok=True)
+            self.pasta_saida.set(str(pasta_final))
+            return pasta_final
+
+        return Path(self.pasta_saida.get())
+
+    # ---------- ImageMagick helpers ----------
+    def _identify_size(self, src_path: Path):
+        out = subprocess.check_output(["identify", "-format", "%w %h", str(src_path)], text=True).strip()
+        w, h = map(int, out.split())
+        return w, h
+
+    def _args_square_crop(self, src_path: Path):
+        # Se resize ativo, usa largura_max como lado do quadrado
+        if self.redimensionar.get():
+            try:
+                s = int(self.largura_max.get())
+                if s > 0:
+                    return ["-resize", f"{s}x{s}^", "-gravity", "center", "-extent", f"{s}x{s}"]
+            except Exception:
+                pass
+
+        # Caso contrário, corta no menor lado original
+        w, h = self._identify_size(src_path)
+        s = min(w, h)
+        return ["-gravity", "center", "-crop", f"{s}x{s}+0+0", "+repage"]
+
+    def _args_fit_to_box_long_side(self, src_path: Path, long_side: int):
+        # Garante long side == long_side preservando aspecto
+        w, h = self._identify_size(src_path)
+        if w >= h:
+            return ["-resize", f"{long_side}x"]
+        return ["-resize", f"x{long_side}"]
+
+    # ---------- UI build ----------
+    def criar_interface(self):
+        # Header compacto
+        header = tk.Frame(self.root, bg="#ffffff", height=60)
+        header.pack(fill=tk.X)
+        header.pack_propagate(False)
+
+        header_inner = tk.Frame(header, bg="#ffffff")
+        header_inner.pack(fill=tk.X, padx=16, pady=12)
+
+        tk.Label(
+            header_inner,
+            text="🖼️ BrJoy Converter",
+            font=("Arial", 14, "bold"),
+            bg="#ffffff",
+            fg=COLORS["text"],
+        ).pack(side=tk.LEFT)
+
+        tk.Label(
+            header_inner,
+            text="Converta imagens para WebP/PNG em lote",
+            font=("Arial", 9),
+            bg="#ffffff",
+            fg=COLORS["text_secondary"],
+        ).pack(side=tk.LEFT, padx=(12, 0))
+
+        # Corpo: 2 colunas
+        body = tk.Frame(self.root, bg=COLORS["bg"])
+        body.pack(fill=tk.BOTH, expand=True, padx=16, pady=12)
+
+        # Coluna esquerda
+        left_col = tk.Frame(body, bg=COLORS["bg"])
+        left_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 8))
+
+        files_card = tk.Frame(
+            left_col, bg=COLORS["card"], highlightthickness=1, highlightbackground=COLORS["border"], relief=tk.FLAT
+        )
+        files_card.pack(fill=tk.BOTH, expand=True)
+
+        files_header = tk.Frame(files_card, bg=COLORS["card"])
+        files_header.pack(fill=tk.X, padx=16, pady=(12, 8))
+
+        tk.Label(
+            files_header, text="📁 Arquivos", font=("Arial", 10, "bold"), bg=COLORS["card"], fg=COLORS["text"]
+        ).pack(side=tk.LEFT)
+
+        actions_frame = tk.Frame(files_header, bg=COLORS["card"])
+        actions_frame.pack(side=tk.RIGHT)
+
+        self.btn_adicionar = tk.Button(
+            actions_frame,
+            text="+ Adicionar",
+            command=self.selecionar_arquivos,
+            font=("Arial", 9),
+            bg=COLORS["secondary"],
+            fg=COLORS["text"],
+            padx=12,
+            pady=4,
+            cursor="hand2",
+            relief=tk.FLAT,
+            bd=0,
+        )
+        self.btn_adicionar.pack(side=tk.LEFT, padx=(0, 6))
+
+        self.btn_limpar = tk.Button(
+            actions_frame,
+            text="Limpar",
+            command=self.limpar_arquivos,
+            font=("Arial", 9),
+            bg=COLORS["secondary"],
+            fg=COLORS["text"],
+            padx=12,
+            pady=4,
+            cursor="hand2",
+            relief=tk.FLAT,
+            bd=0,
+            state=tk.DISABLED,
+        )
+        self.btn_limpar.pack(side=tk.LEFT)
+
+        # Lista + drop zone
+        list_container = tk.Frame(files_card, bg="#f8f8f8")
+        list_container.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 12))
+        self.drop_zone = list_container
+
+        # Treeview style (para hover do DnD)
+        style = ttk.Style()
+        style.configure(
+            "Files.Treeview",
+            background="#ffffff",
+            fieldbackground="#ffffff",
+            borderwidth=0,
+        )
+        style.configure(
+            "FilesDrop.Treeview",
+            background=COLORS["drop_hover"],
+            fieldbackground=COLORS["drop_hover"],
+            borderwidth=0,
+        )
+
+        columns = ("nome", "status")
+        self.tree = ttk.Treeview(list_container, columns=columns, show="headings", height=10, selectmode="extended")
+        self.tree.configure(style="Files.Treeview")
+        self.tree.heading("nome", text="Nome")
+        self.tree.heading("status", text="Status")
+        self.tree.column("nome", width=430)
+        self.tree.column("status", width=90, anchor=tk.CENTER)
+
+        scrollbar = ttk.Scrollbar(list_container, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Setup drag and drop em tree e container
+        if DND_AVAILABLE:
+            self.setup_drag_drop(self.tree)
+            self.setup_drag_drop(self.drop_zone)
+
+        # Empty state
+        self.empty_label = tk.Label(
+            list_container,
+            text="Arraste e solte imagens aqui\nou clique em Adicionar (Ctrl+O)",
+            font=("Arial", 10),
+            bg="#f8f8f8",
+            fg=COLORS["text_muted"],
+        )
+
+        # Coluna direita
+        right_col = tk.Frame(body, bg=COLORS["bg"], width=220)
+        right_col.pack(side=tk.RIGHT, fill=tk.Y)
+        right_col.pack_propagate(False)
+
+        config_card = tk.Frame(
+            right_col, bg=COLORS["card"], highlightthickness=1, highlightbackground=COLORS["border"], relief=tk.FLAT
+        )
+        config_card.pack(fill=tk.BOTH, expand=True)
+
+        config_inner = tk.Frame(config_card, bg=COLORS["card"])
+        config_inner.pack(fill=tk.BOTH, padx=16, pady=12)
+
+        tk.Label(
+            config_inner,
+            text="⚙️ Configurações",
+            font=("Arial", 10, "bold"),
+            bg=COLORS["card"],
+            fg=COLORS["text"],
+        ).pack(anchor=tk.W, pady=(0, 12))
+
+        # Presets
+        tk.Label(
+            config_inner,
+            text="Presets",
+            font=("Arial", 9, "bold"),
+            bg=COLORS["card"],
+            fg=COLORS["text_secondary"],
+        ).pack(anchor=tk.W, pady=(0, 6))
+
+        self.preset_var = tk.StringVar(value="")
+        self.preset_combo = ttk.Combobox(
+            config_inner,
+            textvariable=self.preset_var,
+            values=[""] + list(PRESETS.keys()),
+            state="readonly",
+            font=("Arial", 9),
+            width=18,
+        )
+        self.preset_combo.pack(anchor=tk.W, pady=(0, 12))
+        self.preset_combo.bind("<<ComboboxSelected>>", self.aplicar_preset)
+
+        tk.Frame(config_inner, bg=COLORS["border"], height=1).pack(fill=tk.X, pady=(0, 12))
+
+        # Formato
+        tk.Label(
+            config_inner,
+            text="Formato",
+            font=("Arial", 9, "bold"),
+            bg=COLORS["card"],
+            fg=COLORS["text_secondary"],
+        ).pack(anchor=tk.W, pady=(0, 6))
+
+        self.radio_webp = tk.Radiobutton(
+            config_inner,
+            text="WebP",
+            variable=self.formato,
+            value="webp",
+            font=("Arial", 9),
+            bg=COLORS["card"],
+            fg=COLORS["text"],
+            selectcolor=COLORS["card"],
+            activebackground=COLORS["card"],
+            highlightthickness=0,
+        )
+        self.radio_webp.pack(anchor=tk.W, pady=2)
+
+        self.radio_png = tk.Radiobutton(
+            config_inner,
+            text="PNG",
+            variable=self.formato,
+            value="png",
+            font=("Arial", 9),
+            bg=COLORS["card"],
+            fg=COLORS["text"],
+            selectcolor=COLORS["card"],
+            activebackground=COLORS["card"],
+            highlightthickness=0,
+        )
+        self.radio_png.pack(anchor=tk.W, pady=2)
+
+        tk.Frame(config_inner, bg=COLORS["border"], height=1).pack(fill=tk.X, pady=12)
+
+        # Recorte 1:1
+        self.check_recorte = tk.Checkbutton(
+            config_inner,
+            text="🔲 Recorte 1:1",
+            variable=self.recorte_1x1,
+            font=("Arial", 9),
+            bg=COLORS["card"],
+            fg=COLORS["text"],
+            selectcolor=COLORS["card"],
+            activebackground=COLORS["card"],
+            highlightthickness=0,
+        )
+        self.check_recorte.pack(anchor=tk.W, pady=(0, 8))
+
+        # Resize
+        self.check_resize = tk.Checkbutton(
+            config_inner,
+            text="📐 Redimensionar",
+            variable=self.redimensionar,
+            command=self.toggle_resize,
+            font=("Arial", 9),
+            bg=COLORS["card"],
+            fg=COLORS["text"],
+            selectcolor=COLORS["card"],
+            activebackground=COLORS["card"],
+            highlightthickness=0,
+        )
+        self.check_resize.pack(anchor=tk.W, pady=(0, 6))
+
+        resize_input = tk.Frame(config_inner, bg=COLORS["card"])
+        resize_input.pack(anchor=tk.W, padx=(20, 0))
+
+        self.largura_entry = tk.Entry(
+            resize_input,
+            textvariable=self.largura_max,
+            font=("Arial", 9),
+            bg=COLORS["secondary"],
+            fg=COLORS["text"],
+            relief=tk.FLAT,
+            bd=0,
+            width=8,
+            state=tk.DISABLED,
+        )
+        self.largura_entry.pack(side=tk.LEFT, padx=(0, 4))
+
+        tk.Label(resize_input, text="px", font=("Arial", 9), bg=COLORS["card"], fg=COLORS["text_secondary"]).pack(
+            side=tk.LEFT
+        )
+
+        # Footer
+        footer = tk.Frame(self.root, bg="#ffffff", height=100)
+        footer.pack(fill=tk.X, side=tk.BOTTOM)
+        footer.pack_propagate(False)
+
+        footer_inner = tk.Frame(footer, bg="#ffffff")
+        footer_inner.pack(fill=tk.BOTH, padx=16, pady=12)
+
+        output_frame = tk.Frame(footer_inner, bg="#ffffff")
+        output_frame.pack(fill=tk.X, pady=(0, 8))
+
+        tk.Label(
+            output_frame,
+            text="Pasta de saída:",
+            font=("Arial", 9),
+            bg="#ffffff",
+            fg=COLORS["text_secondary"],
+        ).pack(side=tk.LEFT, padx=(0, 8))
+
+        self.pasta_entry = tk.Entry(
+            output_frame,
+            textvariable=self.pasta_saida,
+            font=("Arial", 9),
+            bg=COLORS["secondary"],
+            fg=COLORS["text"],
+            relief=tk.FLAT,
+            bd=0,
+            state="readonly",
+        )
+        self.pasta_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+
+        self.btn_pasta = tk.Button(
+            output_frame,
+            text="Escolher",
+            command=self.escolher_pasta,
+            font=("Arial", 9),
+            bg=COLORS["secondary"],
+            fg=COLORS["text"],
+            padx=12,
+            pady=4,
+            cursor="hand2",
+            relief=tk.FLAT,
+            bd=0,
+        )
+        self.btn_pasta.pack(side=tk.LEFT)
+
+        self.progress_bar = ttk.Progressbar(footer_inner, mode="determinate")
+        self.progress_bar.pack(fill=tk.X, pady=(0, 6))
+
+        bottom_row = tk.Frame(footer_inner, bg="#ffffff")
+        bottom_row.pack(fill=tk.X)
+
+        self.status_label = tk.Label(
+            bottom_row,
+            text="Nenhum arquivo selecionado",
+            font=("Arial", 9),
+            bg="#ffffff",
+            fg=COLORS["text_secondary"],
+        )
+        self.status_label.pack(side=tk.LEFT)
+
+        self.btn_converter = tk.Button(
+            bottom_row,
+            text="✨ Converter (0)",
+            command=self.converter,
+            font=("Arial", 10, "bold"),
+            bg=COLORS["secondary"],
+            fg=COLORS["text_muted"],
+            padx=24,
+            pady=8,
+            cursor="hand2",
+            relief=tk.FLAT,
+            bd=0,
+            state=tk.DISABLED,
+        )
+        self.btn_converter.pack(side=tk.RIGHT)
+
+    # ---------- Actions ----------
+    def escolher_pasta(self):
+        pasta = filedialog.askdirectory(title="Escolher pasta de saída")
+        if pasta:
+            self.pasta_saida.set(pasta)
+
+    def limpar_arquivos(self):
+        if self.convertendo:
+            return
+        self.arquivos = []
+        if self.tree:
+            self.tree.delete(*self.tree.get_children())
+        if self.progress_bar:
+            self.progress_bar["value"] = 0
+        self.atualizar_estado()
+
+    def selecionar_arquivos(self):
+        if self.convertendo:
+            return
+
+        try:
+            result = subprocess.run(
+                [
+                    "zenity",
+                    "--file-selection",
+                    "--multiple",
+                    "--title=Selecione imagens para converter",
+                    "--file-filter=Imagens | *.heic *.HEIC *.jpg *.jpeg *.JPG *.JPEG *.png *.PNG *.bmp *.BMP *.tiff *.TIFF *.gif *.GIF *.webp *.WEBP *.avif *.AVIF",
+                    "--file-filter=Todos os arquivos | *",
+                ],
+                capture_output=True,
+                text=True,
+            )
+
+            if result.returncode == 0 and result.stdout.strip():
+                arquivos = result.stdout.strip().split("|")
+                # filtra duplicados e extensões
+                novos = []
+                for a in arquivos:
+                    if not a:
+                        continue
+                    p = Path(a)
+                    if p.suffix.lower() in SUPPORTED_EXTENSIONS and a not in self.arquivos:
+                        novos.append(a)
+                if novos:
+                    self.arquivos.extend(novos)
+                    self.atualizar_lista()
+
+        except FileNotFoundError:
+            arquivos = filedialog.askopenfilenames(
+                title="Selecione imagens para converter",
+                filetypes=[
+                    ("Imagens", "*.heic *.HEIC *.jpg *.jpeg *.JPG *.JPEG *.png *.PNG *.bmp *.BMP *.tiff *.TIFF *.gif *.GIF *.webp *.WEBP *.avif *.AVIF"),
+                    ("Todos os arquivos", "*.*"),
+                ],
+            )
+            if arquivos:
+                novos = []
+                for a in arquivos:
+                    p = Path(a)
+                    if p.suffix.lower() in SUPPORTED_EXTENSIONS and a not in self.arquivos:
+                        novos.append(a)
+                if novos:
+                    self.arquivos.extend(novos)
+                    self.atualizar_lista()
+
+    def atualizar_lista(self):
+        if not self.tree:
+            return
+        self.tree.delete(*self.tree.get_children())
+        for arq in self.arquivos:
+            nome = Path(arq).name
+            self.tree.insert("", tk.END, values=(nome, "—"))
+        self.atualizar_estado()
+
+    # ---------- Conversion ----------
+    def converter(self):
+        if self.convertendo:
+            return
+        if not self.arquivos:
+            return
+
+        pasta_final = self.criar_pasta_sessao()
+
+        self.convertendo = True
+        self.atualizar_estado()
+
+        threading.Thread(target=self._converter_thread, args=(pasta_final,), daemon=True).start()
+
+    def _converter_thread(self, pasta_final: Path):
+        formato = self.formato.get()
+        sucesso = 0
+        erro = 0
+        total = len(self.arquivos)
+
+        def set_progress_max():
+            self.progress_bar["maximum"] = total
+            self.progress_bar["value"] = 0
+
+        self.ui(set_progress_max)
+
+        items = []
+        try:
+            items = list(self.tree.get_children())
+        except Exception:
+            items = []
+
+        for idx, arquivo in enumerate(self.arquivos):
+            arquivo_path = Path(arquivo)
+            nome_saida = arquivo_path.stem + f".{formato}"
+            saida = pasta_final / nome_saida
+
+            item_id = items[idx] if idx < len(items) else None
+
+            try:
+                if item_id:
+                    self.ui(self.tree.item, item_id, values=(arquivo_path.name, "⏳"))
+                self.ui(self.status_label.config, text=f"Convertendo {idx+1} de {total}...")
+
+                cmd = ["convert", str(arquivo_path)]
+
+                # Caso preset com W e H (altura_max preenchida): resize crop para preencher
+                target_w = None
+                target_h = None
+                if self.altura_max.get().strip():
+                    try:
+                        target_w = int(self.largura_max.get())
+                        target_h = int(self.altura_max.get())
+                    except Exception:
+                        target_w = None
+                        target_h = None
+
+                if self.recorte_1x1.get():
+                    cmd.extend(self._args_square_crop(arquivo_path))
+
+                elif target_w and target_h:
+                    cmd.extend(["-resize", f"{target_w}x{target_h}^", "-gravity", "center", "-extent", f"{target_w}x{target_h}"])
+
+                elif self.redimensionar.get():
+                    # “Thumb 1280px” ou resize geral por long side
+                    try:
+                        long_side = int(self.largura_max.get())
+                        if long_side > 0:
+                            cmd.extend(self._args_fit_to_box_long_side(arquivo_path, long_side))
+                    except Exception:
+                        pass
+
+                # Qualidade para webp
+                if formato == "webp":
+                    cmd.extend(["-quality", "90"])
+
+                cmd.append(str(saida))
+
+                subprocess.run(cmd, check=True, capture_output=True)
+
+                if item_id:
+                    self.ui(self.tree.item, item_id, values=(arquivo_path.name, "✓"))
+                sucesso += 1
+
+            except Exception:
+                if item_id:
+                    self.ui(self.tree.item, item_id, values=(arquivo_path.name, "✗"))
+                erro += 1
+
+            self.ui(self.progress_bar.configure, value=idx + 1)
+
+        def finish():
+            self.status_label.config(text=f"Concluído: {sucesso} OK, {erro} erros")
+            messagebox.showinfo(
+                "Concluído",
+                f"Conversão finalizada!\n\n✓ {sucesso} convertidos\n✗ {erro} falhas\n\nPasta: {pasta_final}",
+            )
+            self.convertendo = False
+            self.atualizar_estado()
+            try:
+                subprocess.run(["xdg-open", str(pasta_final)])
+            except Exception:
+                pass
+
+        self.ui(finish)
+
+
+if __name__ == "__main__":
+    if DND_AVAILABLE:
+        root = TkinterDnD.Tk()
+    else:
+        root = tk.Tk()
+
+    try:
+        root.tk.call("wm", "attributes", ".", "-type", "normal")
+    except Exception:
+        pass
+
+    app = ConversorHEIC(root)
+    root.mainloop()
