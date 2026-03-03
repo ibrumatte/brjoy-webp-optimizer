@@ -1,5 +1,47 @@
 # CHANGELOG
 
+## [1.2.0] - 2026-03-03
+
+### 📊 Reports & AI Integration
+
+Automatic report generation for visual analysis and AI-powered code updates.
+
+### ✨ New Features
+
+#### Automated Reports
+- **HTML Report**: Beautiful visual report with statistics
+  - Total savings (MB and %)
+  - Before/after sizes
+  - Conversion duration
+  - Top 10 images with most savings
+  - Auto-opens in browser
+  - Saved as `conversion-report.html`
+
+- **AI Code Update Report**: Structured report for AI assistants
+  - File mapping: `old.png → new.webp`
+  - Examples for HTML, CSS, JS, React, Markdown
+  - Suggested prompts for AI
+  - Perfect for Claude, ChatGPT, Copilot
+  - Saved as `AI-CODE-UPDATE.txt`
+
+- **CSV Export**: Spreadsheet-friendly format
+  - Columns: ANTES, DEPOIS, sizes, savings
+  - Easy to import and analyze
+  - Saved as `conversions.csv`
+
+### 🤖 AI Workflow
+1. Convert images with BrJoy
+2. Get `AI-CODE-UPDATE.txt` report
+3. Send to AI: "Update all image URLs from this report"
+4. AI automatically replaces URLs in your codebase
+
+### 🔧 Technical
+- File-by-file tracking with sizes
+- Responsive HTML design
+- UTF-8 encoding for international support
+
+---
+
 ## [1.1.0] - 2026-03-03
 
 ### 🚀 Performance & UX Update
