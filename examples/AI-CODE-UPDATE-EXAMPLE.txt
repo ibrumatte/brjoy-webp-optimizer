@@ -1,0 +1,75 @@
+# BrJoy WebP Optimizer - AI Code Update Report
+# Generated: 2026-03-03 11:11:00
+# 
+# INSTRUÇÕES PARA IA:
+# Use este relatório para substituir URLs de imagens no código.
+# Formato: ANTES → DEPOIS
+# 
+# Exemplo de prompt:
+# "Substitua todas as URLs deste relatório no meu código fonte"
+#
+# ============================================================
+
+# LISTA DE SUBSTITUIÇÕES
+# ----------------------
+
+hero.png → hero.webp
+blog-post.jpg → blog-post.webp
+thumbnail.png → thumbnail.webp
+avatar.png → avatar.webp
+banner.jpg → banner.webp
+product-1.jpg → product-1.webp
+product-2.jpg → product-2.webp
+gallery-01.png → gallery-01.webp
+gallery-02.png → gallery-02.webp
+logo.png → logo.webp
+
+
+# FORMATO CSV (para importar em planilhas)
+# ----------------------------------------
+
+ANTES,DEPOIS,ECONOMIA_KB,ECONOMIA_PERCENT
+hero.png,hero.webp,1611.3,66.0
+blog-post.jpg,blog-post.webp,1054.7,60.0
+thumbnail.png,thumbnail.webp,263.7,60.0
+avatar.png,avatar.webp,219.7,70.3
+banner.jpg,banner.webp,2050.8,65.6
+product-1.jpg,product-1.webp,845.2,62.1
+product-2.jpg,product-2.webp,923.4,58.9
+gallery-01.png,gallery-01.webp,1234.5,71.2
+gallery-02.png,gallery-02.webp,987.6,68.4
+logo.png,logo.webp,156.3,75.8
+
+
+# EXEMPLOS DE SUBSTITUIÇÃO NO CÓDIGO
+# -----------------------------------
+
+# HTML:
+# <img src="images/hero.png" /> 
+# ↓
+# <img src="images/hero.webp" />
+
+# CSS:
+# background-image: url('images/hero.png');
+# ↓
+# background-image: url('images/hero.webp');
+
+# JavaScript/React:
+# import hero from './images/hero.png'
+# ↓
+# import hero from './images/hero.webp'
+
+# Markdown:
+# ![Alt text](images/hero.png)
+# ↓
+# ![Alt text](images/hero.webp)
+
+# ============================================================
+# PROMPT SUGERIDO PARA IA:
+# ============================================================
+# 
+# "Analise meu código e substitua todas as referências de imagens
+# listadas neste relatório. Mantenha os caminhos relativos e absolutos.
+# Procure em arquivos: HTML, CSS, JS, JSX, TSX, MD, JSON, etc."
+#
+# ============================================================
