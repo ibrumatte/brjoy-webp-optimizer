@@ -1,5 +1,10 @@
 # BrJoy WebP Optimizer
 
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/ibrumatte/brjoy-webp-optimizer/releases)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
+[![Tests](https://github.com/ibrumatte/brjoy-webp-optimizer/workflows/Tests/badge.svg)](https://github.com/ibrumatte/brjoy-webp-optimizer/actions)
+
 ⚡ **4x faster** desktop pipeline to optimize images for web. Batch convert JPG/PNG to WebP with parallel processing, dark mode, and preview.
 
 ## 🎯 Who Is This For
