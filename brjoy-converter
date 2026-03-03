@@ -34,11 +34,15 @@ COLORS = {
 }
 
 PRESETS = {
-    "Instagram 4:5": {"aspect": "4:5", "resize": True, "width": 1080, "height": 1350, "crop": True},
-    "Quadrado 1:1": {"aspect": "1:1", "resize": True, "width": 1080, "height": 1080, "crop": True},
-    "Story 9:16": {"aspect": "9:16", "resize": True, "width": 1080, "height": 1920, "crop": True},
-    "Thumb 1280px": {"aspect": None, "resize": True, "width": 1280, "height": None, "crop": False},
+    "Hero Image": {"resize": True, "width": 1920, "height": 1080, "crop": True, "quality": 85},
+    "Blog Post": {"resize": True, "width": 1200, "height": 630, "crop": True, "quality": 85},
+    "Thumbnail": {"resize": True, "width": 400, "height": 300, "crop": True, "quality": 80},
+    "Mobile Optimized": {"resize": True, "width": 800, "height": None, "crop": False, "quality": 80},
+    "Avatar/Icon": {"resize": True, "width": 256, "height": 256, "crop": True, "quality": 90},
+    "Original Quality": {"resize": False, "width": None, "height": None, "crop": False, "quality": 95},
 }
+
+IGNORED_DIRS = {"node_modules", ".git", "dist", "build", ".cache", "__pycache__", ".next", ".nuxt", ".vite"}
 
 SUPPORTED_EXTENSIONS = {".heic", ".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".gif", ".webp", ".avif"}
 
@@ -79,13 +83,16 @@ class ConversorHEIC:
 
         # State
         self.formato = tk.StringVar(value="webp")
-        self.arquivos = []
+        self.arquivos = []  # Lista de dicts: {path, rel_path, size, size_after, status}
+        self.pasta_origem = None
         self.pasta_saida = tk.StringVar(value="")
         self.redimensionar = tk.BooleanVar(value=False)
         self.largura_max = tk.StringVar(value="1920")
         self.altura_max = tk.StringVar(value="")
         self.recorte_1x1 = tk.BooleanVar(value=False)
         self.aspect_ratio = tk.StringVar(value="")
+        self.qualidade = tk.IntVar(value=85)
+        self.manter_estrutura = tk.BooleanVar(value=True)
         self.convertendo = False
         self.drop_active = False
 
@@ -113,12 +120,72 @@ class ConversorHEIC:
         if not preset:
             return
 
-        self.recorte_1x1.set(preset["crop"])
         self.redimensionar.set(preset["resize"])
-        self.largura_max.set(str(preset["width"]))
-        self.altura_max.set(str(preset.get("height", "")))
-        self.aspect_ratio.set(preset.get("aspect", ""))
+        self.largura_max.set(str(preset["width"]) if preset["width"] else "")
+        self.altura_max.set(str(preset["height"]) if preset["height"] else "")
+        self.recorte_1x1.set(preset["crop"])
+        self.qualidade.set(preset["quality"])
         self.toggle_resize()
+
+    def escanear_pasta(self):
+        """RF01 - Scan recursivo de pastas"""
+        pasta = filedialog.askdirectory(title="Selecione a pasta raiz para escanear")
+        if not pasta:
+            return
+
+        self.pasta_origem = Path(pasta)
+        self.arquivos = []
+        self.status_label.config(text="Escaneando...")
+        
+        threading.Thread(target=self._escanear_thread, daemon=True).start()
+
+    def _escanear_thread(self):
+        """Escaneia recursivamente até 10 níveis"""
+        encontrados = []
+        total_size = 0
+        
+        def scan_dir(path, depth=0):
+            if depth > 10:
+                return
+            
+            try:
+                for item in path.iterdir():
+                    if item.is_dir():
+                        if item.name not in IGNORED_DIRS:
+                            scan_dir(item, depth + 1)
+                    elif item.is_file() and item.suffix.lower() in SUPPORTED_EXTENSIONS:
+                        rel_path = item.relative_to(self.pasta_origem)
+                        size = item.stat().st_size
+                        encontrados.append({
+                            "path": str(item),
+                            "rel_path": str(rel_path),
+                            "size": size,
+                            "size_after": 0,
+                            "status": "—"
+                        })
+                        
+                        if len(encontrados) >= 10000:  # Limite
+                            return
+            except PermissionError:
+                pass
+        
+        scan_dir(self.pasta_origem)
+        
+        self.arquivos = encontrados
+        total_size = sum(f["size"] for f in encontrados)
+        
+        self.root.after(0, self.atualizar_lista)
+        self.root.after(0, lambda: self.status_label.config(
+            text=f"Encontradas: {len(encontrados)} imagens ({self._format_size(total_size)})"
+        ))
+
+    def _format_size(self, bytes):
+        """Formata bytes para KB/MB/GB"""
+        for unit in ["B", "KB", "MB", "GB"]:
+            if bytes < 1024:
+                return f"{bytes:.1f} {unit}"
+            bytes /= 1024
+        return f"{bytes:.1f} TB"
 
     def setup_drag_drop(self, widget):
         if not DND_AVAILABLE:
@@ -203,6 +270,10 @@ class ConversorHEIC:
         else:
             self.largura_entry.config(state=tk.DISABLED, bg=COLORS["secondary"])
 
+    def _update_quality_label(self, value):
+        """Atualiza label do slider de qualidade"""
+        self.quality_label.config(text=f"{int(float(value))}%")
+
     def verificar_dependencias(self):
         try:
             subprocess.run(["convert", "-version"], capture_output=True, check=True)
@@ -277,8 +348,8 @@ class ConversorHEIC:
         actions_frame = tk.Frame(files_header, bg=COLORS["card"])
         actions_frame.pack(side=tk.RIGHT)
 
-        self.btn_adicionar = tk.Button(actions_frame, text="+ Adicionar",
-                                       command=self.selecionar_arquivos,
+        self.btn_adicionar = tk.Button(actions_frame, text="📂 Escanear Pasta",
+                                       command=self.escanear_pasta,
                                        font=("Arial", 9), bg=COLORS["secondary"], fg=COLORS["text"],
                                        padx=12, pady=4, cursor="hand2", relief=tk.FLAT, bd=0)
         self.btn_adicionar.pack(side=tk.LEFT, padx=(0, 6))
@@ -294,13 +365,15 @@ class ConversorHEIC:
         list_container = tk.Frame(files_card, bg="#f8f8f8")
         list_container.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 12))
 
-        columns = ("nome", "status")
+        columns = ("nome", "tamanho", "status")
         self.tree = ttk.Treeview(list_container, columns=columns, show="headings",
                                 height=10, selectmode="extended")
         self.tree.heading("nome", text="Nome")
+        self.tree.heading("tamanho", text="Tamanho")
         self.tree.heading("status", text="Status")
-        self.tree.column("nome", width=350)
-        self.tree.column("status", width=100)
+        self.tree.column("nome", width=300)
+        self.tree.column("tamanho", width=80)
+        self.tree.column("status", width=70)
 
         scrollbar = ttk.Scrollbar(list_container, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
@@ -360,6 +433,25 @@ class ConversorHEIC:
                                        selectcolor=COLORS["card"], activebackground=COLORS["card"],
                                        highlightthickness=0)
         self.radio_png.pack(anchor=tk.W, pady=2)
+
+        tk.Frame(config_inner, bg=COLORS["border"], height=1).pack(fill=tk.X, pady=12)
+
+        # Qualidade
+        tk.Label(config_inner, text="Qualidade", font=("Arial", 9, "bold"),
+                bg=COLORS["card"], fg=COLORS["text_secondary"]).pack(anchor=tk.W, pady=(0, 6))
+
+        quality_frame = tk.Frame(config_inner, bg=COLORS["card"])
+        quality_frame.pack(fill=tk.X, pady=(0, 12))
+
+        self.quality_label = tk.Label(quality_frame, text="85%", font=("Arial", 9),
+                                      bg=COLORS["card"], fg=COLORS["text"])
+        self.quality_label.pack(side=tk.RIGHT)
+
+        self.quality_slider = tk.Scale(quality_frame, from_=60, to=100, orient=tk.HORIZONTAL,
+                                       variable=self.qualidade, showvalue=0,
+                                       bg=COLORS["card"], fg=COLORS["text"],
+                                       highlightthickness=0, command=self._update_quality_label)
+        self.quality_slider.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         tk.Frame(config_inner, bg=COLORS["border"], height=1).pack(fill=tk.X, pady=12)
 
@@ -470,8 +562,9 @@ class ConversorHEIC:
     def atualizar_lista(self):
         self.tree.delete(*self.tree.get_children())
         for arq in self.arquivos:
-            nome = Path(arq).name
-            self.tree.insert("", tk.END, values=(nome, "—"))
+            nome = arq.get("rel_path", Path(arq["path"]).name)
+            size = self._format_size(arq["size"])
+            self.tree.insert("", tk.END, values=(nome, size, arq["status"]))
         self.atualizar_estado()
 
     def converter(self):
