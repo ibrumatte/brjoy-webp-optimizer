@@ -155,8 +155,8 @@ class ConversorHEIC:
             messagebox.showinfo("Preview", "Add images first")
             return
         
-        # Pegar primeira imagem
-        first_img = Path(self.arquivos[0])
+        # Pegar primeira imagem (arquivos é lista de dicts)
+        first_img = Path(self.arquivos[0]["path"])
         
         try:
             from PIL import Image, ImageTk
@@ -966,8 +966,8 @@ class ConversorHEIC:
 
         # Processar em paralelo
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            # Submeter todas as tarefas
-            futures = {executor.submit(convert_single, idx, arq): idx for idx, arq in enumerate(self.arquivos)}
+            # Submeter todas as tarefas (extrair path do dict)
+            futures = {executor.submit(convert_single, idx, arq["path"]): idx for idx, arq in enumerate(self.arquivos)}
             
             # Processar resultados conforme completam
             for future in as_completed(futures):
