@@ -1,5 +1,59 @@
 # CHANGELOG
 
+## [1.1.0] - 2026-03-03
+
+### 🚀 Performance & UX Update
+
+Major performance improvements and quality-of-life features.
+
+### ✨ New Features
+
+#### Performance
+- **#1 Parallel Processing**: 4x faster with ThreadPoolExecutor (4 threads)
+  - 1000 images: ~2min (was ~5min)
+- **#2 Cancel Button**: Stop conversion gracefully (Esc key)
+  - Shows partial results, no corrupted files
+
+#### Progress & Feedback
+- **#3 Better Progress**: Percentage display next to progress bar
+- **#4 Loading Spinner**: Animated spinner during conversion
+
+#### Visual & Filters
+- **#5 Preview Before/After**: Side-by-side comparison with 👁️ button
+  - Shows dimensions, file size, reduction %
+- **#7 Dark Mode**: Toggle with 🌙 button or Ctrl+D
+- **#8 Advanced Filters**: Sharpen and brightness controls
+
+#### Batch & History
+- **#9 Batch Multiple Sizes**: Generate multiple widths from one image
+  - Example: 800,1200,1920 → image_800w.webp, image_1200w.webp, image_1920w.webp
+- **#10 History**: Track conversions with 📜 button (last 20)
+  - Timestamp, success/errors, output folder
+
+#### Quality of Life
+- **#11 Input Validation**: Width accepts only 1-10000px
+- **#12 Better Error Messages**: Specific errors for common issues
+  - ImageMagick not installed, cannot read file, out of memory
+- **#13 Keyboard Shortcuts**: 
+  - Ctrl+O: Add files
+  - Ctrl+L: Clear list
+  - Ctrl+Enter: Convert
+  - Ctrl+D: Dark mode
+  - Esc: Cancel
+  - Del: Remove selected
+  - Ctrl+Q: Quit
+
+### 📦 Dependencies
+- Optional: `pip install pillow` for preview feature
+
+### 🔧 Technical
+- Concurrent image processing with ThreadPoolExecutor
+- Thread-safe UI updates
+- Graceful cancellation with cleanup
+- History saved to `~/.local/share/brjoy-image-converter/history.txt`
+
+---
+
 ## [1.0.0] - 2026-03-03
 
 ### 🎉 Lançamento Inicial - BrJoy Web Optimizer V1
