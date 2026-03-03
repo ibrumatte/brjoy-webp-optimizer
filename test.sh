@@ -1,5 +1,6 @@
 #!/bin/bash
 # Quick Test Script for BrJoy WebP Optimizer
+set -euo pipefail
 
 echo "🧪 BrJoy WebP Optimizer - Quick Tests"
 echo "====================================="
@@ -45,9 +46,19 @@ else
     echo "⚠️  Pillow not found (preview disabled)"
 fi
 
-# Test 3: File structure
+# Test 3: Functional scripts
 echo ""
-echo "Test 3: Checking file structure..."
+echo "Test 3: Running functional scripts..."
+if python3 test_features.py && python3 test-ai-report.py && python3 test-conversion.py && python3 test-core-logic.py; then
+    echo "✅ Functional scripts OK"
+else
+    echo "❌ Functional scripts failed"
+    exit 1
+fi
+
+# Test 4: File structure
+echo ""
+echo "Test 4: Checking file structure..."
 
 required_files=(
     "brjoy-converter"
@@ -66,18 +77,18 @@ for file in "${required_files[@]}"; do
     fi
 done
 
-# Test 4: Executable permissions
+# Test 5: Executable permissions
 echo ""
-echo "Test 4: Checking permissions..."
+echo "Test 5: Checking permissions..."
 if [ -x "brjoy-converter" ]; then
     echo "✅ brjoy-converter is executable"
 else
     echo "⚠️  brjoy-converter not executable (run: chmod +x brjoy-converter)"
 fi
 
-# Test 5: Git status
+# Test 6: Git status
 echo ""
-echo "Test 5: Git repository status..."
+echo "Test 6: Git repository status..."
 if git rev-parse --git-dir > /dev/null 2>&1; then
     echo "✅ Git repository initialized"
     COMMITS=$(git log --oneline | wc -l)
