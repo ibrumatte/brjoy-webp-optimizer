@@ -414,6 +414,153 @@ class ConversorHEIC:
         """Atualiza label do slider de qualidade"""
         self.quality_label.config(text=f"{int(float(value))}%")
 
+    def _generate_report(self, output_folder, details, duration, success, errors, total):
+        """Gera relatório HTML detalhado da conversão"""
+        try:
+            # Calcular estatísticas
+            total_before = sum(d["before"] for d in details)
+            total_after = sum(d["after"] for d in details)
+            total_saved = total_before - total_after
+            percent_saved = (total_saved / total_before * 100) if total_before > 0 else 0
+            
+            # Top 10 que mais economizaram
+            top_10 = sorted(details, key=lambda x: x["saved"], reverse=True)[:10]
+            
+            # Gerar HTML
+            html = f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BrJoy WebP Optimizer - Relatório de Conversão</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
+               background: #f5f5f7; padding: 20px; }}
+        .container {{ max-width: 1000px; margin: 0 auto; background: white; 
+                     border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
+        .header {{ background: linear-gradient(135deg, #0a84ff 0%, #0070e0 100%); 
+                  color: white; padding: 40px; border-radius: 12px 12px 0 0; }}
+        .header h1 {{ font-size: 32px; margin-bottom: 8px; }}
+        .header p {{ opacity: 0.9; font-size: 14px; }}
+        .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
+                 gap: 20px; padding: 30px; }}
+        .stat-card {{ background: #f8f8f8; padding: 20px; border-radius: 8px; }}
+        .stat-card h3 {{ font-size: 14px; color: #666; margin-bottom: 8px; }}
+        .stat-card .value {{ font-size: 28px; font-weight: bold; color: #111; }}
+        .stat-card .sub {{ font-size: 12px; color: #999; margin-top: 4px; }}
+        .stat-card.success .value {{ color: #10b981; }}
+        .stat-card.error .value {{ color: #ef4444; }}
+        .stat-card.savings .value {{ color: #0a84ff; }}
+        .section {{ padding: 30px; border-top: 1px solid #e6e6ea; }}
+        .section h2 {{ font-size: 20px; margin-bottom: 20px; color: #111; }}
+        table {{ width: 100%; border-collapse: collapse; }}
+        th, td {{ text-align: left; padding: 12px; border-bottom: 1px solid #e6e6ea; }}
+        th {{ background: #f8f8f8; font-weight: 600; font-size: 12px; 
+             color: #666; text-transform: uppercase; }}
+        td {{ font-size: 14px; }}
+        .file-name {{ font-family: 'Courier New', monospace; color: #0a84ff; }}
+        .size {{ text-align: right; }}
+        .savings {{ text-align: right; color: #10b981; font-weight: 600; }}
+        .footer {{ padding: 20px 30px; background: #f8f8f8; border-radius: 0 0 12px 12px; 
+                  text-align: center; font-size: 12px; color: #666; }}
+        .export-btn {{ display: inline-block; margin: 10px 5px; padding: 10px 20px; 
+                      background: #0a84ff; color: white; text-decoration: none; 
+                      border-radius: 6px; font-size: 14px; }}
+        .export-btn:hover {{ background: #0070e0; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🖼️ Relatório de Conversão</h1>
+            <p>BrJoy WebP Optimizer v1.1 • {datetime.now().strftime("%d/%m/%Y %H:%M:%S")}</p>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card success">
+                <h3>Convertidos</h3>
+                <div class="value">{success}</div>
+                <div class="sub">de {total} arquivos</div>
+            </div>
+            <div class="stat-card error">
+                <h3>Erros</h3>
+                <div class="value">{errors}</div>
+                <div class="sub">{(errors/total*100):.1f}% falhas</div>
+            </div>
+            <div class="stat-card savings">
+                <h3>Economia Total</h3>
+                <div class="value">{total_saved/1024/1024:.1f} MB</div>
+                <div class="sub">{percent_saved:.1f}% redução</div>
+            </div>
+            <div class="stat-card">
+                <h3>Tempo</h3>
+                <div class="value">{int(duration//60)}:{int(duration%60):02d}</div>
+                <div class="sub">{duration/success:.2f}s por imagem</div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>📊 Resumo</h2>
+            <table>
+                <tr>
+                    <th>Métrica</th>
+                    <th class="size">Antes</th>
+                    <th class="size">Depois</th>
+                    <th class="size">Economia</th>
+                </tr>
+                <tr>
+                    <td><strong>Tamanho Total</strong></td>
+                    <td class="size">{total_before/1024/1024:.2f} MB</td>
+                    <td class="size">{total_after/1024/1024:.2f} MB</td>
+                    <td class="savings">-{total_saved/1024/1024:.2f} MB ({percent_saved:.1f}%)</td>
+                </tr>
+            </table>
+        </div>
+        
+        <div class="section">
+            <h2>🏆 Top 10 - Maior Economia</h2>
+            <table>
+                <tr>
+                    <th>Arquivo</th>
+                    <th class="size">Antes</th>
+                    <th class="size">Depois</th>
+                    <th class="size">Economia</th>
+                </tr>"""
+            
+            for item in top_10:
+                html += f"""
+                <tr>
+                    <td class="file-name">{item['file']}</td>
+                    <td class="size">{item['before']/1024:.1f} KB</td>
+                    <td class="size">{item['after']/1024:.1f} KB</td>
+                    <td class="savings">-{item['saved']/1024:.1f} KB ({item['percent']:.1f}%)</td>
+                </tr>"""
+            
+            html += f"""
+            </table>
+        </div>
+        
+        <div class="footer">
+            <p><strong>Pasta de saída:</strong> {output_folder}</p>
+            <p style="margin-top: 10px;">Gerado por BrJoy WebP Optimizer v1.1</p>
+            <a href="https://github.com/ibrumatte/brjoy-webp-optimizer" class="export-btn">GitHub</a>
+        </div>
+    </div>
+</body>
+</html>"""
+            
+            # Salvar relatório
+            report_path = output_folder / "conversion-report.html"
+            with open(report_path, "w", encoding="utf-8") as f:
+                f.write(html)
+            
+            # Abrir relatório no navegador
+            subprocess.run(["xdg-open", str(report_path)])
+            
+        except Exception as e:
+            print(f"Failed to generate report: {e}")
+
     def _save_history(self, folder, success, errors, total):
         """Salva conversão no histórico"""
         try:
@@ -919,6 +1066,8 @@ class ConversorHEIC:
         total = len(self.arquivos)
         sucesso = erro = 0
         completed = 0
+        start_time = datetime.now()
+        conversion_details = []  # Lista para relatório detalhado
 
         self.progress_bar["maximum"] = total
         self.progress_bar["value"] = 0
@@ -927,9 +1076,10 @@ class ConversorHEIC:
         def convert_single(idx, arquivo):
             # Checar se foi cancelado
             if self.cancel_requested:
-                return (idx, Path(arquivo).name, "⏸", None)
+                return (idx, Path(arquivo).name, "⏸", None, 0, 0)
             
             arquivo_path = Path(arquivo)
+            size_before = arquivo_path.stat().st_size
             
             try:
                 # Batch multiple sizes
@@ -937,32 +1087,35 @@ class ConversorHEIC:
                     sizes_str = self.batch_sizes_entry.get().strip()
                     sizes = [int(s.strip()) for s in sizes_str.split(",") if s.strip().isdigit()]
                     
+                    total_size_after = 0
                     for size in sizes:
                         saida = pasta_final / f"{arquivo_path.stem}_{size}w.{formato}"
                         cmd = self._build_convert_cmd(arquivo_path, width=size)
                         cmd.append(str(saida))
                         subprocess.run(cmd, check=True, capture_output=True, text=True)
+                        total_size_after += saida.stat().st_size
                     
-                    return (idx, arquivo_path.name, "✓", None)
+                    return (idx, arquivo_path.name, "✓", None, size_before, total_size_after)
                 else:
                     # Single conversion
                     saida = pasta_final / f"{arquivo_path.stem}.{formato}"
                     cmd = self._build_convert_cmd(arquivo_path)
                     cmd.append(str(saida))
                     subprocess.run(cmd, check=True, capture_output=True, text=True)
-                    return (idx, arquivo_path.name, "✓", None)
+                    size_after = saida.stat().st_size
+                    return (idx, arquivo_path.name, "✓", None, size_before, size_after)
             except subprocess.CalledProcessError as e:
                 error_msg = e.stderr.strip() if e.stderr else str(e)
                 if "not recognized" in error_msg or "command not found" in error_msg:
-                    return (idx, arquivo_path.name, "✗", "ImageMagick not installed")
+                    return (idx, arquivo_path.name, "✗", "ImageMagick not installed", 0, 0)
                 elif "unable to open" in error_msg.lower():
-                    return (idx, arquivo_path.name, "✗", "Cannot read file")
+                    return (idx, arquivo_path.name, "✗", "Cannot read file", 0, 0)
                 elif "memory" in error_msg.lower():
-                    return (idx, arquivo_path.name, "✗", "Out of memory")
+                    return (idx, arquivo_path.name, "✗", "Out of memory", 0, 0)
                 else:
-                    return (idx, arquivo_path.name, "✗", f"Convert failed: {error_msg[:50]}")
+                    return (idx, arquivo_path.name, "✗", f"Convert failed: {error_msg[:50]}", 0, 0)
             except Exception as e:
-                return (idx, arquivo_path.name, "✗", f"Error: {str(e)[:50]}")
+                return (idx, arquivo_path.name, "✗", f"Error: {str(e)[:50]}", 0, 0)
 
         # Processar em paralelo
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -976,7 +1129,18 @@ class ConversorHEIC:
                     break
                 
                 idx, nome, status, error = future.result()
+                idx, nome, status, error, size_before, size_after = future.result()
                 completed += 1
+                
+                # Salvar detalhes para relatório
+                if status == "✓":
+                    conversion_details.append({
+                        "file": nome,
+                        "before": size_before,
+                        "after": size_after,
+                        "saved": size_before - size_after,
+                        "percent": ((size_before - size_after) / size_before * 100) if size_before > 0 else 0
+                    })
                 
                 # Atualizar UI (thread-safe)
                 try:
@@ -1001,10 +1165,14 @@ class ConversorHEIC:
 
         # Finalizar
         self.stop_spinner()
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
         
         # Salvar no histórico
         if sucesso > 0:
             self._save_history(pasta_final, sucesso, erro, total)
+            # Gerar relatório HTML
+            self._generate_report(pasta_final, conversion_details, duration, sucesso, erro, total)
         
         if self.cancel_requested:
             self.status_label.config(text=f"Canceled: {sucesso} OK, {erro} errors, {total-completed} skipped")
