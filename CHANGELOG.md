@@ -1,0 +1,98 @@
+# CHANGELOG
+
+## [1.0.0] - 2026-03-03
+
+### 🎉 Lançamento Inicial - BrJoy Web Optimizer V1
+
+Pipeline desktop de otimização de imagens para websites.
+
+### ✨ Features
+
+#### Core
+- **Scan Recursivo**: Escaneia pastas até 10 níveis, ignora `node_modules`, `.git`, `dist`, etc
+- **Manter Estrutura**: Preserva hierarquia de diretórios na saída
+- **Modo Não-Destrutivo**: Nunca sobrescreve arquivos originais
+- **Processamento em Lote**: Até 10.000 imagens por vez
+
+#### Presets Web
+- Hero Image (1920x1080, 85%)
+- Blog Post (1200x630, 85%)
+- Thumbnail (400x300, 80%)
+- Mobile Optimized (800px, 80%)
+- Avatar/Icon (256x256, 90%)
+- Original Quality (95%)
+
+#### Configurações
+- Slider de qualidade 60-100%
+- Formatos: WebP, PNG
+- Recorte 1:1 (quadrado)
+- Redimensionamento customizado
+
+#### UX
+- Drag & Drop de arquivos e pastas
+- Atalhos: Ctrl+O (escanear), Delete (remover), Ctrl+Enter (converter)
+- Barra de progresso em tempo real
+- Relatório HTML com estatísticas
+
+#### Relatório
+- Total de arquivos processados
+- Tamanho original vs final
+- Economia em MB e %
+- Status por arquivo (✓/✗)
+- Top 10 maiores economias
+
+### 🐛 Bugs Conhecidos
+- Conversão pode ser lenta com >1000 imagens (será otimizado em V1.1)
+- Relatório HTML não abre em alguns ambientes (fallback para TXT em V1.1)
+
+### 📦 Dependências
+- Python 3.8+
+- ImageMagick 7+
+- tkinterdnd2 (opcional, para drag & drop)
+
+### 🚀 Instalação
+```bash
+pip3 install tkinterdnd2
+sudo apt install imagemagick
+python3 brjoy-converter
+```
+
+### 📊 Performance
+- 1000 imagens: ~3-5min
+- Economia média: 60-80%
+- Formatos suportados: JPG, PNG, HEIC, BMP, TIFF, GIF, WebP, AVIF
+
+### 🎯 Público-Alvo
+- Desenvolvedores frontend (Next.js, Astro, Hugo, Vite)
+- Agências web
+- Freelancers
+
+### 📝 Notas
+- Primeira versão estável
+- Testado com até 5.000 imagens
+- Economia média de 73% em testes reais
+
+---
+
+## Roadmap
+
+### V1.1 (Próxima)
+- [ ] Processamento paralelo (threads)
+- [ ] Botão "Cancelar" durante conversão
+- [ ] Fallback TXT para relatório
+- [ ] Filtros: ignorar <50KB, >10MB
+
+### V2.0 (Q2 2026)
+- [ ] CLI: `brjoy-img optimize ./public`
+- [ ] Integração CI/CD (GitHub Actions)
+- [ ] Modo watch (auto-convert)
+
+### V3.0 (Q3 2026)
+- [ ] Gerador de snippets `<picture>`
+- [ ] Responsive variants (srcset)
+- [ ] Deduplicação por hash
+
+### V4.0 (Q4 2026)
+- [ ] Plugin WordPress
+- [ ] Integração Cloudflare Images
+- [ ] API REST
