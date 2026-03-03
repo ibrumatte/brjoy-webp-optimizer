@@ -1,5 +1,58 @@
 # CHANGELOG
 
+## [1.3.0] - 2026-03-03
+
+### 🛡️ Reliability Hardening
+
+- **Unified file model**: all ingestion paths now keep `self.arquivos` as structured dicts.
+- **Thread-safe UI updates**: conversion pipeline snapshots UI config and updates widgets via `root.after`.
+- **Fixed broken shortcut**: `Ctrl+L` now clears the list correctly.
+- **Improved cancellation**:
+  - Cancel during batch conversion is now responsive.
+  - Canceled items are counted as `skipped` (not `errors`).
+  - Final summary reflects converted/error/skipped accurately.
+
+### 📂 Output Correctness
+
+- **Preserve structure implemented end-to-end** for output folders.
+- **Name collision protection**: output files auto-suffix when target exists.
+- **Batch resize guaranteed**: batch widths always apply resize rules.
+- **Replace-in-place session logic**: avoids creating unnecessary output folders.
+
+### 🖥️ UX & Platform
+
+- **Cross-platform open path** helper for Linux/macOS/Windows.
+- **Drag & drop improvements**:
+  - Recursive folder scan with depth and file limits.
+  - Respects ignored directories (`node_modules`, `.git`, etc.).
+  - Better dark mode behavior in drop states.
+- **Config validation before start**:
+  - Invalid batch sizes.
+  - Missing width with resize.
+  - Height without width.
+
+### 🔐 Report Safety
+
+- HTML report now escapes file/folder values.
+- CSV export now uses writer-based escaping and formula-injection guards.
+
+### ✅ Tests & CI
+
+- Added `test-core-logic.py` (non-GUI unit tests for core behavior).
+- Expanded quick tests with real functional script execution.
+- Hardened shell script with `set -euo pipefail`.
+- GitHub Actions updated:
+  - `actions/checkout@v4`
+  - `actions/setup-python@v5`
+  - Python matrix: `3.8` and `3.12`
+
+### 🧹 Operational Cleanup
+
+- Portable launcher (`launcher.sh`) no longer depends on hardcoded user paths.
+- Stopped tracking compiled `__pycache__` artifacts.
+
+---
+
 ## [1.2.1] - 2026-03-03
 
 ### 🔄 Replace in Place

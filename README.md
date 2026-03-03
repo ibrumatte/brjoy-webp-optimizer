@@ -1,9 +1,9 @@
 # BrJoy WebP Optimizer
 
-[![Version](https://img.shields.io/badge/version-1.2.1-blue.svg)](https://github.com/ibrumatte/brjoy-webp-optimizer/releases)
+[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/ibrumatte/brjoy-webp-optimizer/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
-[![Tests](https://github.com/ibrumatte/brjoy-webp-optimizer/workflows/Tests/badge.svg)](https://github.com/ibrumatte/brjoy-webp-optimizer/actions)
+[![Tests](https://github.com/ibrumatte/brjoy-webp-optimizer/actions/workflows/test.yml/badge.svg)](https://github.com/ibrumatte/brjoy-webp-optimizer/actions/workflows/test.yml)
 
 ⚡ **4x faster** desktop pipeline to optimize images for web. Batch convert JPG/PNG to WebP with parallel processing, dark mode, preview, and **AI-powered code updates**.
 
@@ -15,7 +15,14 @@
 - Teams improving Core Web Vitals
 - **Developers using AI coding assistants**
 
-## ✨ Features V1.2.1
+## ✨ Features V1.3.0
+
+### 🛡️ NEW: Reliability Hardening
+- **Thread-Safe Conversion Pipeline**: UI updates are synchronized safely during parallel conversion
+- **Skip-Aware Cancellation**: Canceled jobs are tracked as `skipped`, not failures
+- **Output Collision Protection**: Auto-suffix prevents overwriting generated files
+- **Cross-Platform Folder Open**: Works on Linux, macOS, and Windows
+- **Batch Resize Guaranteed**: Batch widths always enforce resize
 
 ### 🔄 NEW: Replace in Place
 - **Preserve Structure**: Convert images in their original folders
@@ -40,6 +47,7 @@
 
 ### Batch & History
 - 📦 **Batch Multiple Sizes**: Generate 800px, 1200px, 1920px from one image
+- ✅ **Batch Resize Guaranteed**: Batch sizes always apply resize rules
 - 📜 **Conversion History**: Track all conversions (last 20)
 
 ### Quality of Life
@@ -69,7 +77,10 @@ pip3 install pillow  # Optional: for preview feature
 sudo apt install imagemagick
 
 # 4. Run
-python3 brjoy-converter
+./brjoy-converter
+
+# 5. Optional: run full checks
+./test.sh
 ```
 
 ## ⌨️ Keyboard Shortcuts
@@ -153,7 +164,7 @@ MIT License - see [LICENSE](LICENSE)
 ## 💬 Support
 
 - 📧 Email: isac@brjoy.com.br
-- 🐛 Issues: [GitHub Issues](https://github.com/brjoy/image-pipeline/issues)
+- 🐛 Issues: [GitHub Issues](https://github.com/ibrumatte/brjoy-webp-optimizer/issues)
 
 ---
 

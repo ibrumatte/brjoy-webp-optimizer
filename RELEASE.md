@@ -1,141 +1,85 @@
-# 🎉 BrJoy Web Optimizer V1.0.0 - Release Notes
+# 🚀 BrJoy WebP Optimizer V1.3.0 - Release Notes
 
-**Data:** 03/03/2026  
-**Status:** ✅ PRONTO PARA BETA
+**Date:** 2026-03-03  
+**Status:** ✅ Ready to publish
 
 ---
 
-## 📦 O Que É
+## What Changed in V1.3.0
 
-Pipeline desktop que converte JPG/PNG para WebP em lote, mantém estrutura de diretórios e gera relatórios de economia. Focado em otimização web.
+### Reliability & Correctness
+- Unified file model across all ingestion paths (scan, picker, drag/drop).
+- Thread-safe conversion flow with UI updates synchronized through Tk main loop.
+- Fixed `Ctrl+L` clear-list shortcut.
+- Responsive cancellation during batch processing.
+- Canceled jobs are now reported as `skipped` (not errors).
 
-## 🎯 Problema Resolvido
+### Output Safety
+- Real preserve-structure behavior in output folders.
+- Output collision protection (`_1`, `_2`, ... suffixes).
+- Batch widths always apply resize rules.
+- Replace-in-place no longer creates unnecessary session folders.
 
-Sites com milhares de imagens pesadas que impactam Core Web Vitals. Times precisam migrar para WebP mas têm medo de quebrar URLs e perder estrutura.
+### UX & Platform
+- Cross-platform open-path support (Linux/macOS/Windows).
+- Better drag/drop behavior in dark mode.
+- Recursive folder add with limits and ignored directories.
+- Pre-flight validation for invalid resize/batch combinations.
 
-## ✨ Destaques V1
+### Reporting & Security
+- HTML report now escapes file/folder values.
+- CSV export hardening against formula injection.
 
-1. **Scan Inteligente**: Ignora `node_modules`, `.git`, processa até 10k imagens
-2. **6 Presets Web**: Hero, Blog, Thumbnail, Mobile, Avatar, Original
-3. **Economia Real**: Média de 73% de redução (testado com 5k imagens)
-4. **Relatório HTML**: Mostra exatamente quanto economizou
-5. **Não-Destrutivo**: Nunca perde arquivos originais
+### Tests & CI
+- New non-GUI unit suite: `test-core-logic.py`.
+- Stronger `test.sh` with functional script execution and strict shell mode.
+- GitHub Actions updated to:
+  - `checkout@v4`
+  - `setup-python@v5`
+  - Python matrix: 3.8 and 3.12
 
-## 📊 Resultados Reais
+---
 
-```
-Teste 1: Site Next.js (347 imagens)
-├─ Original: 156.8 MB
-├─ Final: 42.3 MB
-└─ Economia: 114.5 MB (73%) ✅
+## Validation Snapshot
 
-Teste 2: E-commerce (2.147 imagens)
-├─ Original: 1.2 GB
-├─ Final: 298 MB
-└─ Economia: 902 MB (75%) ✅
-
-Teste 3: E-commerce Site (89 imagens)
-├─ Original: 45.2 MB
-├─ Final: 12.8 MB
-└─ Economia: 32.4 MB (72%) ✅
-```
-
-## 🚀 Como Usar (3 passos)
-
-1. **Escanear**: Selecione pasta do projeto
-2. **Preset**: Escolha "Mobile Optimized"
-3. **Converter**: Aguarde e veja relatório
-
-**Tempo:** 3-5min para 1000 imagens
-
-## 📥 Instalação
+Executed locally on 2026-03-03:
 
 ```bash
-git clone https://github.com/brjoy/web-optimizer.git
-cd web-optimizer
-pip3 install tkinterdnd2
-sudo apt install imagemagick
-python3 brjoy-converter
+python3 -m py_compile brjoy-converter conversor_gui.py test-conversion.py test-core-logic.py
+python3 test-core-logic.py
+bash ./test.sh
 ```
 
-## 🎓 Casos de Uso
-
-### 1. Otimizar site Next.js
-```
-Pasta: /projeto/public
-Preset: Mobile Optimized
-Resultado: 73% menor, LCP melhorou 2.3s
-```
-
-### 2. Preparar blog para SEO
-```
-Pasta: /blog/uploads
-Preset: Blog Post (1200x630 Open Graph)
-Resultado: Imagens otimizadas para redes sociais
-```
-
-### 3. Reduzir custos de CDN
-```
-Pasta: /e-commerce/produtos
-Preset: Thumbnail (400x300)
-Resultado: 75% economia de banda
-```
-
-## 📋 Checklist Pré-Lançamento
-
-- [x] Código funcional e testado
-- [x] PRD completo (522 linhas)
-- [x] README com instruções
-- [x] GUIA.md detalhado
-- [x] CHANGELOG.md
-- [x] TODO.md com roadmap
-- [x] Testes unitários
-- [x] 6 commits organizados
-- [ ] Screenshots/GIFs (pendente)
-- [ ] Vídeo demo 2min (pendente)
-- [ ] Landing page (pendente)
-
-## 🎬 Próximos Passos
-
-### Semana 1 (Beta)
-1. Compartilhar em r/webdev, r/nextjs
-2. Coletar feedback de 10 usuários
-3. Corrigir bugs críticos
-
-### Semana 2 (Launch)
-1. Criar landing page (GitHub Pages)
-2. Vídeo demo no YouTube
-3. Post no Product Hunt
-4. Tweet thread
-
-### Mês 1 (Growth)
-1. Atingir 100 downloads
-2. NPS >40
-3. 5+ menções orgânicas
-4. Iniciar V2 (CLI)
-
-## 🐛 Bugs Conhecidos
-
-1. Conversão lenta com >1000 imagens → V1.1 terá threads
-2. Relatório não abre em alguns ambientes → V1.1 terá fallback TXT
-3. UI trava durante scan → V1.1 terá loading spinner
-
-## 💡 Feedback Esperado
-
-- Presets são úteis?
-- Relatório tem info suficiente?
-- Falta alguma feature crítica?
-- Performance aceitável?
-- UI intuitiva?
-
-## 📞 Contato
-
-- GitHub: https://github.com/brjoy/web-optimizer
-- Email: brjoy@example.com
-- Discord: https://discord.gg/brjoy
+Result: ✅ All checks passed (including 9 unit tests in `test-core-logic.py`).
 
 ---
 
-**🎉 Pronto para lançar!**
+## Upgrade Notes
 
-Próximo comando: `git tag v1.0.0 && git push origin v1.0.0`
+```bash
+git pull
+./test.sh
+./brjoy-converter
+```
+
+---
+
+## Files Added/Updated (V1.3.0)
+
+- `brjoy-converter`
+- `launcher.sh`
+- `conversor_gui.py`
+- `test-core-logic.py` (new)
+- `test-conversion.py`
+- `test.sh`
+- `.github/workflows/test.yml`
+- `README.md`
+- `CHANGELOG.md`
+
+---
+
+## Known Follow-ups
+
+- Optional: modernize `conversor_gui.py` legacy flow to share the same core engine.
+- Optional: add integration test for cancelation race conditions.
+
