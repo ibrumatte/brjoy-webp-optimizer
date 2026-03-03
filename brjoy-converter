@@ -113,6 +113,7 @@ class ConversorHEIC:
         self.aspect_ratio = tk.StringVar(value="")
         self.qualidade = tk.IntVar(value=85)
         self.manter_estrutura = tk.BooleanVar(value=True)
+        self.substituir_no_lugar = tk.BooleanVar(value=False)  # Nova opção
         self.convertendo = False
         self.cancel_requested = False  # Flag para cancelamento
         self.drop_active = False
@@ -976,6 +977,16 @@ class ConversorHEIC:
 
         tk.Frame(config_inner, bg=COLORS["border"], height=1).pack(fill=tk.X, pady=12)
 
+        # Opção: Substituir no lugar
+        self.check_substituir = tk.Checkbutton(config_inner, text="Substituir arquivos originais (⚠️ sem backup)",
+                                               variable=self.substituir_no_lugar,
+                                               font=("Arial", 9), bg=COLORS["card"], fg="#ef4444",
+                                               selectcolor=COLORS["card"], activebackground=COLORS["card"],
+                                               highlightthickness=0)
+        self.check_substituir.pack(anchor=tk.W, pady=(0, 12))
+
+        tk.Frame(config_inner, bg=COLORS["border"], height=1).pack(fill=tk.X, pady=12)
+
         # Filtros avançados
         tk.Label(config_inner, text="Filters", font=("Arial", 9, "bold"),
                 bg=COLORS["card"], fg=COLORS["text_secondary"]).pack(anchor=tk.W, pady=(0, 6))
@@ -1193,6 +1204,14 @@ class ConversorHEIC:
             arquivo_path = Path(arquivo)
             size_before = arquivo_path.stat().st_size
             
+            # Decidir pasta de saída
+            if self.substituir_no_lugar.get():
+                # Substituir no lugar (mesma pasta do original)
+                pasta_saida = arquivo_path.parent
+            else:
+                # Usar pasta de saída configurada
+                pasta_saida = pasta_final
+            
             try:
                 # Batch multiple sizes
                 if self.batch_sizes_var.get():
@@ -1201,7 +1220,7 @@ class ConversorHEIC:
                     
                     total_size_after = 0
                     for size in sizes:
-                        saida = pasta_final / f"{arquivo_path.stem}_{size}w.{formato}"
+                        saida = pasta_saida / f"{arquivo_path.stem}_{size}w.{formato}"
                         cmd = self._build_convert_cmd(arquivo_path, width=size)
                         cmd.append(str(saida))
                         subprocess.run(cmd, check=True, capture_output=True, text=True)
@@ -1210,7 +1229,7 @@ class ConversorHEIC:
                     return (idx, arquivo_path.name, "✓", None, size_before, total_size_after)
                 else:
                     # Single conversion
-                    saida = pasta_final / f"{arquivo_path.stem}.{formato}"
+                    saida = pasta_saida / f"{arquivo_path.stem}.{formato}"
                     cmd = self._build_convert_cmd(arquivo_path)
                     cmd.append(str(saida))
                     subprocess.run(cmd, check=True, capture_output=True, text=True)
