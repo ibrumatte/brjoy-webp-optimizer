@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## [1.2.1] - 2026-03-03
+
+### 🔄 Replace in Place
+
+New option to convert images in their original folders, preserving project structure.
+
+### ✨ New Features
+
+- **Replace in Place Option**: Checkbox to convert images without moving them
+  - Saves converted files in same folder as originals
+  - Preserves directory structure automatically
+  - Perfect for updating existing projects
+  - No broken code references
+  - Warning indicator (red text) alerts about no backup
+
+### 🔧 Technical Changes
+
+- Modified `convert_single()` to support dual output modes
+- Added `self.substituir_no_lugar` BooleanVar (line 121)
+- Dynamic output path: `arquivo_path.parent` vs `pasta_final`
+- UI checkbox added in configuration panel
+
+### 📖 Use Cases
+
+**Before (V1.2.0):**
+```
+src/images/hero.png → output/BrJoy_2026-03-03/hero.webp
+```
+
+**After (V1.2.1):**
+```
+src/images/hero.png → src/images/hero.webp  ✓ Same folder!
+```
+
+---
+
 ## [1.2.0] - 2026-03-03
 
 ### 📊 Reports & AI Integration

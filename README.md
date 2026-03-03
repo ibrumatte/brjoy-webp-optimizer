@@ -1,6 +1,6 @@
 # BrJoy WebP Optimizer
 
-[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/ibrumatte/brjoy-webp-optimizer/releases)
+[![Version](https://img.shields.io/badge/version-1.2.1-blue.svg)](https://github.com/ibrumatte/brjoy-webp-optimizer/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
 [![Tests](https://github.com/ibrumatte/brjoy-webp-optimizer/workflows/Tests/badge.svg)](https://github.com/ibrumatte/brjoy-webp-optimizer/actions)
@@ -15,9 +15,15 @@
 - Teams improving Core Web Vitals
 - **Developers using AI coding assistants**
 
-## ✨ Features V1.2
+## ✨ Features V1.2.1
 
-### 📊 NEW: Automated Reports
+### 🔄 NEW: Replace in Place
+- **Preserve Structure**: Convert images in their original folders
+- **No Broken Paths**: Maintains directory structure automatically
+- **Perfect for Projects**: Update existing codebases without moving files
+- **Safe Warning**: Red indicator alerts about no automatic backup
+
+### 📊 Automated Reports (V1.2)
 - **HTML Report**: Beautiful visual dashboard with savings statistics
 - **AI Code Update**: Structured report for AI to update your code automatically
 - **CSV Export**: Spreadsheet-friendly data for analysis
