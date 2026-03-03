@@ -11,6 +11,8 @@ from pathlib import Path
 import threading
 from datetime import datetime
 import platform
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import multiprocessing
 
 # Try to import drag and drop support
 try:
@@ -45,6 +47,9 @@ PRESETS = {
 IGNORED_DIRS = {"node_modules", ".git", "dist", "build", ".cache", "__pycache__", ".next", ".nuxt", ".vite"}
 
 SUPPORTED_EXTENSIONS = {".heic", ".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".gif", ".webp", ".avif"}
+
+# Performance settings
+MAX_WORKERS = min(4, multiprocessing.cpu_count())  # Use 4 threads or CPU count, whichever is smaller
 
 # Widget styles
 WIDGET_STYLE = {
@@ -94,6 +99,7 @@ class ConversorHEIC:
         self.qualidade = tk.IntVar(value=85)
         self.manter_estrutura = tk.BooleanVar(value=True)
         self.convertendo = False
+        self.cancel_requested = False  # Flag para cancelamento
         self.drop_active = False
 
         self.criar_interface()
@@ -511,7 +517,7 @@ class ConversorHEIC:
         self.progress_bar = ttk.Progressbar(footer_inner, mode="determinate")
         self.progress_bar.pack(fill=tk.X, pady=(0, 6))
 
-        # Status + Botão
+        # Status + Botões
         bottom_row = tk.Frame(footer_inner, bg="#ffffff")
         bottom_row.pack(fill=tk.X)
 
@@ -519,6 +525,12 @@ class ConversorHEIC:
                                      font=("Arial", 9), bg="#ffffff", fg=COLORS["text_secondary"])
         self.status_label.pack(side=tk.LEFT)
 
+        # Botão Cancel (inicialmente oculto)
+        self.btn_cancel = tk.Button(bottom_row, text="⏸ Cancel",
+                                    command=self.cancelar_conversao,
+                                    font=("Arial", 9), bg="#ef4444", fg="#ffffff",
+                                    padx=16, pady=8, cursor="hand2", relief=tk.FLAT, bd=0)
+        
         self.btn_converter = tk.Button(bottom_row, text="✨ Converter (0)",
                                        command=self.converter,
                                        font=("Arial", 10, "bold"), bg=COLORS["secondary"],
@@ -573,8 +585,16 @@ class ConversorHEIC:
 
         pasta_final = self.criar_pasta_sessao()
         self.convertendo = True
+        self.cancel_requested = False
         self.atualizar_estado()
         threading.Thread(target=self._converter_thread, args=(pasta_final,), daemon=True).start()
+
+    def cancelar_conversao(self):
+        """Cancela a conversão em andamento"""
+        if self.convertendo:
+            self.cancel_requested = True
+            self.status_label.config(text="Canceling... please wait")
+            self.btn_cancel.config(state=tk.DISABLED)
 
     def _build_convert_cmd(self, input_path):
         """Constrói comando ImageMagick baseado nas configurações"""
@@ -600,40 +620,74 @@ class ConversorHEIC:
         return cmd
 
     def _converter_thread(self, pasta_final):
+        """Conversão paralela usando ThreadPoolExecutor"""
         formato = self.formato.get()
         total = len(self.arquivos)
         sucesso = erro = 0
+        completed = 0
 
         self.progress_bar["maximum"] = total
         self.progress_bar["value"] = 0
 
-        for idx, arquivo in enumerate(self.arquivos):
+        # Função para converter uma única imagem
+        def convert_single(idx, arquivo):
+            # Checar se foi cancelado
+            if self.cancel_requested:
+                return (idx, Path(arquivo).name, "⏸", None)
+            
             arquivo_path = Path(arquivo)
             saida = pasta_final / f"{arquivo_path.stem}.{formato}"
-
+            
             try:
-                item_id = self.tree.get_children()[idx]
-                self.tree.item(item_id, values=(arquivo_path.name, "⏳"))
-                self.status_label.config(text=f"Convertendo {idx+1} de {total}...")
-
                 cmd = self._build_convert_cmd(arquivo_path)
                 cmd.append(str(saida))
                 subprocess.run(cmd, check=True, capture_output=True)
+                return (idx, arquivo_path.name, "✓", None)
+            except Exception as e:
+                return (idx, arquivo_path.name, "✗", str(e))
 
-                self.tree.item(item_id, values=(arquivo_path.name, "✓"))
-                sucesso += 1
-            except Exception:
-                self.tree.item(item_id, values=(arquivo_path.name, "✗"))
-                erro += 1
+        # Processar em paralelo
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            # Submeter todas as tarefas
+            futures = {executor.submit(convert_single, idx, arq): idx for idx, arq in enumerate(self.arquivos)}
+            
+            # Processar resultados conforme completam
+            for future in as_completed(futures):
+                if self.cancel_requested:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    break
+                
+                idx, nome, status, error = future.result()
+                completed += 1
+                
+                # Atualizar UI (thread-safe)
+                try:
+                    item_id = self.tree.get_children()[idx]
+                    self.tree.item(item_id, values=(nome, status))
+                except:
+                    pass
+                
+                if status == "✓":
+                    sucesso += 1
+                elif status == "✗":
+                    erro += 1
+                
+                # Atualizar progresso
+                self.progress_bar["value"] = completed
+                self.status_label.config(text=f"Converting {completed}/{total} ({MAX_WORKERS} threads)...")
 
-            self.progress_bar["value"] = idx + 1
-
-        self.status_label.config(text=f"Concluído: {sucesso} OK, {erro} erros")
-        messagebox.showinfo("Concluído", f"✓ {sucesso} convertidos\n✗ {erro} falhas\n\nPasta: {pasta_final}")
+        # Finalizar
+        if self.cancel_requested:
+            self.status_label.config(text=f"Canceled: {sucesso} OK, {erro} errors, {total-completed} skipped")
+            messagebox.showwarning("Canceled", f"Conversion canceled\n\n✓ {sucesso} converted\n✗ {erro} failed\n⏸ {total-completed} skipped")
+        else:
+            self.status_label.config(text=f"Completed: {sucesso} OK, {erro} errors")
+            messagebox.showinfo("Completed", f"✓ {sucesso} converted\n✗ {erro} failed\n\nFolder: {pasta_final}")
+            subprocess.run(["xdg-open", str(pasta_final)])
 
         self.convertendo = False
+        self.cancel_requested = False
         self.atualizar_estado()
-        subprocess.run(["xdg-open", str(pasta_final)])
 
 
 if __name__ == "__main__":
