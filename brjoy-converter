@@ -120,6 +120,8 @@ class ConversorHEIC:
         self.spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
         self.spinner_idx = 0
         self.dark_mode = False
+        self.history_file = Path.home() / ".local/share/brjoy-image-converter/history.txt"
+        self.history_file.parent.mkdir(parents=True, exist_ok=True)
 
         self.criar_interface()
         self.setup_keyboard_shortcuts()
@@ -310,6 +312,13 @@ class ConversorHEIC:
         self.preset_combo.config(state="readonly" if not self.convertendo else tk.DISABLED)
         self.toggle_resize()
 
+    def toggle_batch_sizes(self):
+        """Habilita/desabilita batch sizes"""
+        if self.batch_sizes_var.get():
+            self.batch_sizes_entry.config(state=tk.NORMAL, bg="#ffffff")
+        else:
+            self.batch_sizes_entry.config(state=tk.DISABLED, bg=COLORS["secondary"])
+
     def toggle_resize(self):
         if self.redimensionar.get():
             self.largura_entry.config(state=tk.NORMAL, bg="#ffffff")
@@ -329,6 +338,56 @@ class ConversorHEIC:
     def _update_quality_label(self, value):
         """Atualiza label do slider de qualidade"""
         self.quality_label.config(text=f"{int(float(value))}%")
+
+    def _save_history(self, folder, success, errors, total):
+        """Salva conversão no histórico"""
+        try:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            entry = f"{timestamp} | {success}/{total} OK | {errors} errors | {folder}\n"
+            with open(self.history_file, "a") as f:
+                f.write(entry)
+        except Exception as e:
+            print(f"Failed to save history: {e}")
+
+    def show_history(self):
+        """Mostra histórico de conversões"""
+        if not self.history_file.exists():
+            messagebox.showinfo("History", "No conversion history yet")
+            return
+        
+        try:
+            with open(self.history_file, "r") as f:
+                lines = f.readlines()[-20:]  # Últimas 20 conversões
+            
+            history_text = "".join(reversed(lines)) if lines else "No history"
+            
+            # Criar janela de histórico
+            win = tk.Toplevel(self.root)
+            win.title("Conversion History")
+            win.geometry("700x400")
+            win.configure(bg=COLORS["bg"])
+            
+            text = tk.Text(win, font=("Courier", 9), bg=COLORS["card"], fg=COLORS["text"],
+                          relief=tk.FLAT, padx=12, pady=12)
+            text.pack(fill=tk.BOTH, expand=True, padx=16, pady=16)
+            text.insert("1.0", history_text)
+            text.config(state=tk.DISABLED)
+            
+            tk.Button(win, text="Clear History", command=lambda: self._clear_history(win),
+                     font=("Arial", 9), bg="#ef4444", fg="#ffffff",
+                     padx=16, pady=8, cursor="hand2", relief=tk.FLAT).pack(pady=(0, 16))
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load history: {e}")
+
+    def _clear_history(self, window):
+        """Limpa histórico"""
+        if messagebox.askyesno("Clear History", "Delete all conversion history?"):
+            try:
+                self.history_file.unlink(missing_ok=True)
+                window.destroy()
+                messagebox.showinfo("Success", "History cleared")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to clear history: {e}")
 
     def verificar_dependencias(self):
         try:
@@ -388,6 +447,12 @@ class ConversorHEIC:
                                   font=("Arial", 14), bg="#ffffff", fg=COLORS["text"],
                                   cursor="hand2", relief=tk.FLAT, bd=0, padx=8)
         self.btn_dark.pack(side=tk.RIGHT)
+        
+        # History button
+        self.btn_history = tk.Button(header_inner, text="📜", command=self.show_history,
+                                     font=("Arial", 14), bg="#ffffff", fg=COLORS["text"],
+                                     cursor="hand2", relief=tk.FLAT, bd=0, padx=8)
+        self.btn_history.pack(side=tk.RIGHT)
 
         # Corpo: 2 colunas
         body = tk.Frame(self.root, bg=COLORS["bg"])
@@ -495,6 +560,28 @@ class ConversorHEIC:
                                        selectcolor=COLORS["card"], activebackground=COLORS["card"],
                                        highlightthickness=0)
         self.radio_png.pack(anchor=tk.W, pady=2)
+
+        tk.Frame(config_inner, bg=COLORS["border"], height=1).pack(fill=tk.X, pady=12)
+
+        # Batch sizes
+        self.batch_sizes_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(config_inner, text="Batch Multiple Sizes", variable=self.batch_sizes_var,
+                      command=self.toggle_batch_sizes,
+                      font=("Arial", 9, "bold"), bg=COLORS["card"], fg=COLORS["text"],
+                      selectcolor=COLORS["card"], activebackground=COLORS["card"],
+                      highlightthickness=0).pack(anchor=tk.W, pady=(0, 6))
+        
+        self.batch_frame = tk.Frame(config_inner, bg=COLORS["card"])
+        self.batch_frame.pack(anchor=tk.W, padx=(20, 0), pady=(0, 12))
+        
+        tk.Label(self.batch_frame, text="Sizes (e.g. 800,1200,1920):", font=("Arial", 8),
+                bg=COLORS["card"], fg=COLORS["text_secondary"]).pack(anchor=tk.W)
+        
+        self.batch_sizes_entry = tk.Entry(self.batch_frame, font=("Arial", 9),
+                                          bg=COLORS["secondary"], fg=COLORS["text"],
+                                          relief=tk.FLAT, bd=0, width=18, state=tk.DISABLED)
+        self.batch_sizes_entry.pack(anchor=tk.W, pady=(4, 0))
+        self.batch_sizes_entry.insert(0, "800,1200,1920")
 
         tk.Frame(config_inner, bg=COLORS["border"], height=1).pack(fill=tk.X, pady=12)
 
@@ -714,7 +801,7 @@ class ConversorHEIC:
             self.spinner_idx = (self.spinner_idx + 1) % len(self.spinner_frames)
             self.root.after(80, self._animate_spinner)
 
-    def _build_convert_cmd(self, input_path):
+    def _build_convert_cmd(self, input_path, width=None):
         """Constrói comando ImageMagick baseado nas configurações"""
         cmd = ["convert", str(input_path)]
 
@@ -728,7 +815,7 @@ class ConversorHEIC:
 
         if self.redimensionar.get():
             try:
-                largura = int(self.largura_max.get())
+                largura = width if width else int(self.largura_max.get())
                 altura = self.altura_max.get()
                 
                 if altura:  # Preset com altura definida
@@ -762,13 +849,27 @@ class ConversorHEIC:
                 return (idx, Path(arquivo).name, "⏸", None)
             
             arquivo_path = Path(arquivo)
-            saida = pasta_final / f"{arquivo_path.stem}.{formato}"
             
             try:
-                cmd = self._build_convert_cmd(arquivo_path)
-                cmd.append(str(saida))
-                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-                return (idx, arquivo_path.name, "✓", None)
+                # Batch multiple sizes
+                if self.batch_sizes_var.get():
+                    sizes_str = self.batch_sizes_entry.get().strip()
+                    sizes = [int(s.strip()) for s in sizes_str.split(",") if s.strip().isdigit()]
+                    
+                    for size in sizes:
+                        saida = pasta_final / f"{arquivo_path.stem}_{size}w.{formato}"
+                        cmd = self._build_convert_cmd(arquivo_path, width=size)
+                        cmd.append(str(saida))
+                        subprocess.run(cmd, check=True, capture_output=True, text=True)
+                    
+                    return (idx, arquivo_path.name, "✓", None)
+                else:
+                    # Single conversion
+                    saida = pasta_final / f"{arquivo_path.stem}.{formato}"
+                    cmd = self._build_convert_cmd(arquivo_path)
+                    cmd.append(str(saida))
+                    subprocess.run(cmd, check=True, capture_output=True, text=True)
+                    return (idx, arquivo_path.name, "✓", None)
             except subprocess.CalledProcessError as e:
                 error_msg = e.stderr.strip() if e.stderr else str(e)
                 if "not recognized" in error_msg or "command not found" in error_msg:
@@ -819,6 +920,11 @@ class ConversorHEIC:
 
         # Finalizar
         self.stop_spinner()
+        
+        # Salvar no histórico
+        if sucesso > 0:
+            self._save_history(pasta_final, sucesso, erro, total)
+        
         if self.cancel_requested:
             self.status_label.config(text=f"Canceled: {sucesso} OK, {erro} errors, {total-completed} skipped")
             messagebox.showwarning("Canceled", f"Conversion canceled\n\n✓ {sucesso} converted\n✗ {erro} failed\n⏸ {total-completed} skipped")
