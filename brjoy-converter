@@ -22,7 +22,7 @@ except ImportError:
     DND_AVAILABLE = False
 
 # UI Constants
-COLORS = {
+COLORS_LIGHT = {
     "bg": "#f5f5f7",
     "card": "#ffffff",
     "border": "#e6e6ea",
@@ -34,6 +34,21 @@ COLORS = {
     "secondary": "#f5f5f7",
     "drop_hover": "#eaf2ff",
 }
+
+COLORS_DARK = {
+    "bg": "#1c1c1e",
+    "card": "#2c2c2e",
+    "border": "#3a3a3c",
+    "text": "#ffffff",
+    "text_secondary": "#98989d",
+    "text_muted": "#636366",
+    "primary": "#0a84ff",
+    "primary_hover": "#0070e0",
+    "secondary": "#3a3a3c",
+    "drop_hover": "#1a3a52",
+}
+
+COLORS = COLORS_LIGHT.copy()
 
 PRESETS = {
     "Hero Image": {"resize": True, "width": 1920, "height": 1080, "crop": True, "quality": 85},
@@ -104,6 +119,7 @@ class ConversorHEIC:
         self.spinner_running = False
         self.spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
         self.spinner_idx = 0
+        self.dark_mode = False
 
         self.criar_interface()
         self.setup_keyboard_shortcuts()
@@ -120,6 +136,8 @@ class ConversorHEIC:
         self.root.bind("<Escape>", lambda e: self.cancelar_conversao() if self.convertendo else None)
         self.root.bind("<Control-q>", lambda e: self.root.quit())
         self.root.bind("<Control-Q>", lambda e: self.root.quit())
+        self.root.bind("<Control-d>", lambda e: self.toggle_dark_mode())
+        self.root.bind("<Control-D>", lambda e: self.toggle_dark_mode())
 
     @requires_idle
     def remover_selecionados(self):
@@ -243,6 +261,20 @@ class ConversorHEIC:
             self.arquivos.extend(novos)
             self.atualizar_lista()
 
+    def toggle_dark_mode(self):
+        """Alterna entre modo claro e escuro"""
+        global COLORS
+        self.dark_mode = not self.dark_mode
+        COLORS.update(COLORS_DARK if self.dark_mode else COLORS_LIGHT)
+        self.btn_dark.config(text="☀️" if self.dark_mode else "🌙")
+        
+        # Recriar interface
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        self.criar_interface()
+        self.atualizar_lista()
+        self.atualizar_estado()
+
     def atualizar_estado(self):
         n = len(self.arquivos)
         pode_converter = n > 0 and not self.convertendo
@@ -350,6 +382,12 @@ class ConversorHEIC:
 
         tk.Label(header_inner, text="Converta imagens para WebP/PNG em lote",
                 font=("Arial", 9), bg="#ffffff", fg=COLORS["text_secondary"]).pack(side=tk.LEFT, padx=(12, 0))
+
+        # Dark mode toggle
+        self.btn_dark = tk.Button(header_inner, text="🌙", command=self.toggle_dark_mode,
+                                  font=("Arial", 14), bg="#ffffff", fg=COLORS["text"],
+                                  cursor="hand2", relief=tk.FLAT, bd=0, padx=8)
+        self.btn_dark.pack(side=tk.RIGHT)
 
         # Corpo: 2 colunas
         body = tk.Frame(self.root, bg=COLORS["bg"])
@@ -729,10 +767,20 @@ class ConversorHEIC:
             try:
                 cmd = self._build_convert_cmd(arquivo_path)
                 cmd.append(str(saida))
-                subprocess.run(cmd, check=True, capture_output=True)
+                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
                 return (idx, arquivo_path.name, "✓", None)
+            except subprocess.CalledProcessError as e:
+                error_msg = e.stderr.strip() if e.stderr else str(e)
+                if "not recognized" in error_msg or "command not found" in error_msg:
+                    return (idx, arquivo_path.name, "✗", "ImageMagick not installed")
+                elif "unable to open" in error_msg.lower():
+                    return (idx, arquivo_path.name, "✗", "Cannot read file")
+                elif "memory" in error_msg.lower():
+                    return (idx, arquivo_path.name, "✗", "Out of memory")
+                else:
+                    return (idx, arquivo_path.name, "✗", f"Convert failed: {error_msg[:50]}")
             except Exception as e:
-                return (idx, arquivo_path.name, "✗", str(e))
+                return (idx, arquivo_path.name, "✗", f"Error: {str(e)[:50]}")
 
         # Processar em paralelo
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -759,6 +807,9 @@ class ConversorHEIC:
                     sucesso += 1
                 elif status == "✗":
                     erro += 1
+                    # Log erro para debug
+                    if error:
+                        print(f"Error converting {nome}: {error}")
                 
                 # Atualizar progresso
                 self.progress_bar["value"] = completed
