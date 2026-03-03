@@ -1234,6 +1234,14 @@ class ConversorHEIC:
                     cmd.append(str(saida))
                     subprocess.run(cmd, check=True, capture_output=True, text=True)
                     size_after = saida.stat().st_size
+                    
+                    # 🔥 NOVO: Verificar se WebP ficou maior que original
+                    if size_after > size_before:
+                        # Deletar WebP inútil
+                        saida.unlink()
+                        # Retornar como "skipped" (mantém original)
+                        return (idx, arquivo_path.name, "⊘", "Skipped (larger than original)", size_before, size_before)
+                    
                     return (idx, arquivo_path.name, "✓", None, size_before, size_after)
             except subprocess.CalledProcessError as e:
                 error_msg = e.stderr.strip() if e.stderr else str(e)
@@ -1272,6 +1280,19 @@ class ConversorHEIC:
                         "saved": size_before - size_after,
                         "percent": ((size_before - size_after) / size_before * 100) if size_before > 0 else 0
                     })
+                    sucesso += 1
+                elif status == "⊘":  # Skipped (larger)
+                    conversion_details.append({
+                        "file": nome,
+                        "before": size_before,
+                        "after": size_after,
+                        "saved": 0,
+                        "percent": 0,
+                        "skipped": True
+                    })
+                    # Não conta como sucesso nem erro
+                else:
+                    erro += 1
                 
                 # Atualizar UI (thread-safe)
                 try:
@@ -1280,13 +1301,9 @@ class ConversorHEIC:
                 except:
                     pass
                 
-                if status == "✓":
-                    sucesso += 1
-                elif status == "✗":
-                    erro += 1
-                    # Log erro para debug
-                    if error:
-                        print(f"Error converting {nome}: {error}")
+                # Log erro para debug
+                if status == "✗" and error:
+                    print(f"Error converting {nome}: {error}")
                 
                 # Atualizar progresso
                 self.progress_bar["value"] = completed
