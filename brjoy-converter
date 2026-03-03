@@ -101,6 +101,9 @@ class ConversorHEIC:
         self.convertendo = False
         self.cancel_requested = False  # Flag para cancelamento
         self.drop_active = False
+        self.spinner_running = False
+        self.spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        self.spinner_idx = 0
 
         self.criar_interface()
         self.setup_keyboard_shortcuts()
@@ -112,6 +115,11 @@ class ConversorHEIC:
         self.root.bind("<Control-O>", lambda e: self.selecionar_arquivos())
         self.root.bind("<Delete>", lambda e: self.remover_selecionados())
         self.root.bind("<Control-Return>", lambda e: self.converter())
+        self.root.bind("<Control-l>", lambda e: self.limpar_lista())
+        self.root.bind("<Control-L>", lambda e: self.limpar_lista())
+        self.root.bind("<Escape>", lambda e: self.cancelar_conversao() if self.convertendo else None)
+        self.root.bind("<Control-q>", lambda e: self.root.quit())
+        self.root.bind("<Control-Q>", lambda e: self.root.quit())
 
     @requires_idle
     def remover_selecionados(self):
@@ -275,6 +283,16 @@ class ConversorHEIC:
             self.largura_entry.config(state=tk.NORMAL, bg="#ffffff")
         else:
             self.largura_entry.config(state=tk.DISABLED, bg=COLORS["secondary"])
+
+    def _validate_number(self, value):
+        """Valida entrada numérica"""
+        if value == "":
+            return True
+        try:
+            num = int(value)
+            return 1 <= num <= 10000
+        except ValueError:
+            return False
 
     def _update_quality_label(self, value):
         """Atualiza label do slider de qualidade"""
@@ -480,13 +498,41 @@ class ConversorHEIC:
         resize_input = tk.Frame(config_inner, bg=COLORS["card"])
         resize_input.pack(anchor=tk.W, padx=(20, 0))
 
+        # Validação de entrada numérica
+        vcmd = (self.root.register(self._validate_number), '%P')
         self.largura_entry = tk.Entry(resize_input, textvariable=self.largura_max,
                                       font=("Arial", 9), bg=COLORS["secondary"], fg=COLORS["text"],
-                                      relief=tk.FLAT, bd=0, width=8, state=tk.DISABLED)
+                                      relief=tk.FLAT, bd=0, width=8, state=tk.DISABLED,
+                                      validate='key', validatecommand=vcmd)
         self.largura_entry.pack(side=tk.LEFT, padx=(0, 4))
 
         tk.Label(resize_input, text="px", font=("Arial", 9),
                 bg=COLORS["card"], fg=COLORS["text_secondary"]).pack(side=tk.LEFT)
+
+        tk.Frame(config_inner, bg=COLORS["border"], height=1).pack(fill=tk.X, pady=12)
+
+        # Filtros avançados
+        tk.Label(config_inner, text="Filters", font=("Arial", 9, "bold"),
+                bg=COLORS["card"], fg=COLORS["text_secondary"]).pack(anchor=tk.W, pady=(0, 6))
+
+        self.sharpen_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(config_inner, text="Sharpen", variable=self.sharpen_var,
+                      font=("Arial", 9), bg=COLORS["card"], fg=COLORS["text"],
+                      selectcolor=COLORS["card"], activebackground=COLORS["card"],
+                      highlightthickness=0).pack(anchor=tk.W, pady=2)
+
+        self.brightness_var = tk.IntVar(value=100)
+        brightness_frame = tk.Frame(config_inner, bg=COLORS["card"])
+        brightness_frame.pack(fill=tk.X, pady=4)
+        tk.Label(brightness_frame, text="Brightness", font=("Arial", 9),
+                bg=COLORS["card"], fg=COLORS["text"]).pack(side=tk.LEFT)
+        self.brightness_label = tk.Label(brightness_frame, text="100%", font=("Arial", 9),
+                                         bg=COLORS["card"], fg=COLORS["text"], width=5)
+        self.brightness_label.pack(side=tk.RIGHT)
+        tk.Scale(brightness_frame, from_=50, to=150, orient=tk.HORIZONTAL,
+                variable=self.brightness_var, showvalue=0, bg=COLORS["card"],
+                fg=COLORS["text"], highlightthickness=0,
+                command=lambda v: self.brightness_label.config(text=f"{int(float(v))}%")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
 
         # Rodapé fixo
         footer = tk.Frame(self.root, bg="#ffffff", height=100)
@@ -513,15 +559,30 @@ class ConversorHEIC:
                                    padx=12, pady=4, cursor="hand2", relief=tk.FLAT, bd=0)
         self.btn_pasta.pack(side=tk.LEFT)
 
-        # Progresso
-        self.progress_bar = ttk.Progressbar(footer_inner, mode="determinate")
-        self.progress_bar.pack(fill=tk.X, pady=(0, 6))
+        # Progresso com percentual
+        progress_container = tk.Frame(footer_inner, bg="#ffffff")
+        progress_container.pack(fill=tk.X, pady=(0, 6))
+        
+        self.progress_bar = ttk.Progressbar(progress_container, mode="determinate")
+        self.progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+        
+        self.progress_label = tk.Label(progress_container, text="0%", font=("Arial", 9, "bold"),
+                                       bg="#ffffff", fg=COLORS["primary"], width=5)
+        self.progress_label.pack(side=tk.LEFT)
 
         # Status + Botões
         bottom_row = tk.Frame(footer_inner, bg="#ffffff")
         bottom_row.pack(fill=tk.X)
 
-        self.status_label = tk.Label(bottom_row, text="Nenhum arquivo selecionado",
+        # Status com spinner
+        status_container = tk.Frame(bottom_row, bg="#ffffff")
+        status_container.pack(side=tk.LEFT)
+        
+        self.spinner_label = tk.Label(status_container, text="", font=("Arial", 11),
+                                      bg="#ffffff", fg=COLORS["primary"])
+        self.spinner_label.pack(side=tk.LEFT, padx=(0, 4))
+        
+        self.status_label = tk.Label(status_container, text="Nenhum arquivo selecionado",
                                      font=("Arial", 9), bg="#ffffff", fg=COLORS["text_secondary"])
         self.status_label.pack(side=tk.LEFT)
 
@@ -586,6 +647,7 @@ class ConversorHEIC:
         pasta_final = self.criar_pasta_sessao()
         self.convertendo = True
         self.cancel_requested = False
+        self.start_spinner()
         self.atualizar_estado()
         threading.Thread(target=self._converter_thread, args=(pasta_final,), daemon=True).start()
 
@@ -596,9 +658,35 @@ class ConversorHEIC:
             self.status_label.config(text="Canceling... please wait")
             self.btn_cancel.config(state=tk.DISABLED)
 
+    def start_spinner(self):
+        """Inicia animação do spinner"""
+        self.spinner_running = True
+        self.spinner_idx = 0
+        self._animate_spinner()
+
+    def stop_spinner(self):
+        """Para animação do spinner"""
+        self.spinner_running = False
+        self.spinner_label.config(text="")
+
+    def _animate_spinner(self):
+        """Anima o spinner"""
+        if self.spinner_running:
+            self.spinner_label.config(text=self.spinner_frames[self.spinner_idx])
+            self.spinner_idx = (self.spinner_idx + 1) % len(self.spinner_frames)
+            self.root.after(80, self._animate_spinner)
+
     def _build_convert_cmd(self, input_path):
         """Constrói comando ImageMagick baseado nas configurações"""
         cmd = ["convert", str(input_path)]
+
+        # Filtros avançados
+        if self.sharpen_var.get():
+            cmd.extend(["-sharpen", "0x1"])
+        
+        brightness = self.brightness_var.get()
+        if brightness != 100:
+            cmd.extend(["-modulate", f"{brightness},100,100"])
 
         if self.redimensionar.get():
             try:
@@ -674,9 +762,12 @@ class ConversorHEIC:
                 
                 # Atualizar progresso
                 self.progress_bar["value"] = completed
+                percent = int((completed / total) * 100)
+                self.progress_label.config(text=f"{percent}%")
                 self.status_label.config(text=f"Converting {completed}/{total} ({MAX_WORKERS} threads)...")
 
         # Finalizar
+        self.stop_spinner()
         if self.cancel_requested:
             self.status_label.config(text=f"Canceled: {sucesso} OK, {erro} errors, {total-completed} skipped")
             messagebox.showwarning("Canceled", f"Conversion canceled\n\n✓ {sucesso} converted\n✗ {erro} failed\n⏸ {total-completed} skipped")
@@ -687,6 +778,7 @@ class ConversorHEIC:
 
         self.convertendo = False
         self.cancel_requested = False
+        self.progress_label.config(text="0%")
         self.atualizar_estado()
 
 
