@@ -5,7 +5,10 @@
 
 ---
 
-## 🔥 V1.1 - Performance & Polish (Target: April 2026)
+## 🔥 V1.1 - Performance & Polish (Target: Week of March 10, 2026)
+
+**Release Date:** March 10-14, 2026 (Next Week)  
+**Focus:** Performance improvements and critical UX fixes
 
 ### 🚀 Performance (P0 - Critical)
 
@@ -423,11 +426,35 @@ Response:
 
 ## 📊 Effort Summary
 
-### V1.1 (Total: ~30h)
-- Performance: 7h
-- UI/UX: 11.5h
-- Features: 9h
-- Bugs: 3.5h
+### V1.1 - Next Week Sprint (Total: ~30h over 5 days = 6h/day)
+**Days:** March 10-14, 2026
+
+**Monday (6h):**
+- #1 Parallel Processing (4h)
+- #2 Cancel Button (2h)
+
+**Tuesday (6h):**
+- #3 Better Progress (1h)
+- #4 Loading Spinner (1h)
+- #8 Advanced Filters (2h)
+- #11 Input Validation (1h)
+- #13 Keyboard Shortcuts (1h)
+
+**Wednesday (6h):**
+- #5 Preview Before/After (6h)
+
+**Thursday (6h):**
+- #9 Batch Multiple Sizes (4h)
+- #12 Better Error Messages (2h)
+
+**Friday (6h):**
+- #7 Dark Mode (3h)
+- #10 History (3h)
+
+**Weekend:**
+- Testing & bug fixes
+- Update documentation
+- Release V1.1
 
 ### V2.0 (Total: ~17h)
 - CLI: 8h
@@ -475,10 +502,10 @@ Response:
 
 ## 📅 Release Schedule
 
-- **V1.1** - April 2026 (1 month)
-- **V2.0** - June 2026 (Q2)
-- **V3.0** - September 2026 (Q3)
-- **V4.0** - December 2026 (Q4)
+- **V1.1** - March 10-14, 2026 (Next Week) ⚡
+- **V2.0** - April 2026 (1 month)
+- **V3.0** - June 2026 (Q2)
+- **V4.0** - September 2026 (Q3)
 
 ---
 
