@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
+import csv
+import html
 import os
+import shutil
 import sys
 
 os.environ["GDK_BACKEND"] = "x11"
@@ -10,7 +13,6 @@ import subprocess
 from pathlib import Path
 import threading
 from datetime import datetime
-import platform
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import multiprocessing
 
@@ -62,6 +64,7 @@ PRESETS = {
 IGNORED_DIRS = {"node_modules", ".git", "dist", "build", ".cache", "__pycache__", ".next", ".nuxt", ".vite"}
 
 SUPPORTED_EXTENSIONS = {".heic", ".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".gif", ".webp", ".avif"}
+MAX_DROP_SCAN_FILES = 2000
 
 # Performance settings
 MAX_WORKERS = min(4, multiprocessing.cpu_count())  # Use 4 threads or CPU count, whichever is smaller
@@ -167,7 +170,8 @@ class ConversorHEIC:
             with tempfile.NamedTemporaryFile(suffix=f".{self.formato.get()}", delete=False) as tmp:
                 tmp_path = tmp.name
             
-            cmd = self._build_convert_cmd(first_img)
+            preview_config = self._snapshot_conversion_config()
+            cmd = self._build_convert_cmd(first_img, preview_config)
             cmd.append(tmp_path)
             subprocess.run(cmd, check=True, capture_output=True)
             
@@ -252,7 +256,6 @@ class ConversorHEIC:
     def _escanear_thread(self):
         """Escaneia recursivamente até 10 níveis"""
         encontrados = []
-        total_size = 0
         
         def scan_dir(path, depth=0):
             if depth > 10:
@@ -265,14 +268,7 @@ class ConversorHEIC:
                             scan_dir(item, depth + 1)
                     elif item.is_file() and item.suffix.lower() in SUPPORTED_EXTENSIONS:
                         rel_path = item.relative_to(self.pasta_origem)
-                        size = item.stat().st_size
-                        encontrados.append({
-                            "path": str(item),
-                            "rel_path": str(rel_path),
-                            "size": size,
-                            "size_after": 0,
-                            "status": "—"
-                        })
+                        encontrados.append(self._new_file_entry(item, rel_path=rel_path))
                         
                         if len(encontrados) >= 10000:  # Limite
                             return
@@ -281,13 +277,8 @@ class ConversorHEIC:
         
         scan_dir(self.pasta_origem)
         
-        self.arquivos = encontrados
         total_size = sum(f["size"] for f in encontrados)
-        
-        self.root.after(0, self.atualizar_lista)
-        self.root.after(0, lambda: self.status_label.config(
-            text=f"Encontradas: {len(encontrados)} imagens ({self._format_size(total_size)})"
-        ))
+        self.root.after(0, lambda: self._finish_scan(encontrados, total_size))
 
     def _format_size(self, bytes):
         """Formata bytes para KB/MB/GB"""
@@ -296,6 +287,23 @@ class ConversorHEIC:
                 return f"{bytes:.1f} {unit}"
             bytes /= 1024
         return f"{bytes:.1f} TB"
+
+    def _new_file_entry(self, path, rel_path=None):
+        path_obj = Path(path).resolve()
+        if rel_path is None:
+            rel_path = path_obj.name
+        return {
+            "path": str(path_obj),
+            "rel_path": str(rel_path),
+            "size": path_obj.stat().st_size,
+            "size_after": 0,
+            "status": "—"
+        }
+
+    def _finish_scan(self, encontrados, total_size):
+        self.arquivos = encontrados
+        self.atualizar_lista()
+        self.status_label.config(text=f"Encontradas: {len(encontrados)} imagens ({self._format_size(total_size)})")
 
     def setup_drag_drop(self, widget):
         if not DND_AVAILABLE:
@@ -311,29 +319,67 @@ class ConversorHEIC:
             self.tree.configure(background=COLORS["drop_hover"])
 
     def on_drag_leave(self, event):
-        self.tree.configure(background="#ffffff")
+        self.tree.configure(background=COLORS["card"])
 
     @requires_idle
     def on_drop(self, event):
-        self.tree.configure(background="#ffffff")
+        self.tree.configure(background=COLORS["card"])
         files = self.root.tk.splitlist(event.data)
         self._add_files([f.strip("{}") for f in files])
+
+    def _iter_supported_images(self, root_path):
+        """Itera imagens suportadas de forma recursiva, ignorando pastas conhecidas."""
+        root_path = Path(root_path)
+        stack = [(root_path, 0)]
+        collected = 0
+
+        while stack and collected < MAX_DROP_SCAN_FILES:
+            current, depth = stack.pop()
+            if depth > 10:
+                continue
+
+            try:
+                items = sorted(current.iterdir(), key=lambda p: p.name.lower())
+            except (PermissionError, FileNotFoundError, NotADirectoryError):
+                continue
+
+            for item in items:
+                if collected >= MAX_DROP_SCAN_FILES:
+                    break
+                if item.is_dir():
+                    if item.name not in IGNORED_DIRS:
+                        stack.append((item, depth + 1))
+                elif item.is_file() and item.suffix.lower() in SUPPORTED_EXTENSIONS:
+                    collected += 1
+                    yield item
 
     def _add_files(self, paths):
         """Helper para adicionar arquivos validando extensões e duplicatas"""
         novos = []
+        existentes = {arq["path"] for arq in self.arquivos if isinstance(arq, dict) and "path" in arq}
+
+        def add_file(path_obj):
+            abs_path = str(path_obj.resolve())
+            if abs_path in existentes:
+                return
+            if self.pasta_origem:
+                try:
+                    rel_path = path_obj.resolve().relative_to(self.pasta_origem.resolve())
+                except ValueError:
+                    rel_path = path_obj.name
+            else:
+                rel_path = path_obj.name
+            novos.append(self._new_file_entry(path_obj, rel_path=rel_path))
+            existentes.add(abs_path)
+
         for path_str in paths:
             path = Path(path_str)
             
             if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS:
-                if path_str not in self.arquivos:
-                    novos.append(path_str)
+                add_file(path)
             elif path.is_dir():
-                for img in list(path.iterdir())[:100]:  # Limite de 100
-                    if img.is_file() and img.suffix.lower() in SUPPORTED_EXTENSIONS:
-                        img_str = str(img)
-                        if img_str not in self.arquivos:
-                            novos.append(img_str)
+                for img in self._iter_supported_images(path):
+                    add_file(img)
         
         if novos:
             self.arquivos.extend(novos)
@@ -368,6 +414,14 @@ class ConversorHEIC:
         # Botões de ação
         self.btn_limpar.config(state=tk.NORMAL if pode_converter else tk.DISABLED)
 
+        if self.convertendo:
+            if not self.btn_cancel.winfo_ismapped():
+                self.btn_cancel.pack(side=tk.RIGHT, padx=(0, 8))
+        else:
+            if self.btn_cancel.winfo_ismapped():
+                self.btn_cancel.pack_forget()
+            self.btn_cancel.config(state=tk.NORMAL)
+
         # Status
         if not self.convertendo:
             if n == 0:
@@ -383,23 +437,45 @@ class ConversorHEIC:
 
         # Inputs
         estado = tk.DISABLED if self.convertendo else tk.NORMAL
-        for widget in [self.btn_adicionar, self.btn_pasta, self.radio_webp, self.radio_png, self.check_recorte, self.check_resize]:
+        for widget in [
+            self.btn_adicionar,
+            self.btn_pasta,
+            self.radio_webp,
+            self.radio_png,
+            self.check_recorte,
+            self.check_resize,
+            self.check_batch,
+            self.check_estrutura,
+            self.check_substituir,
+        ]:
             widget.config(state=estado)
         self.preset_combo.config(state="readonly" if not self.convertendo else tk.DISABLED)
+        if self.substituir_no_lugar.get() and not self.convertendo:
+            self.check_estrutura.config(state=tk.DISABLED)
+        self.toggle_batch_sizes()
         self.toggle_resize()
 
     def toggle_batch_sizes(self):
         """Habilita/desabilita batch sizes"""
-        if self.batch_sizes_var.get():
+        if self.convertendo:
+            self.batch_sizes_entry.config(state=tk.DISABLED, bg=COLORS["secondary"])
+        elif self.batch_sizes_var.get():
             self.batch_sizes_entry.config(state=tk.NORMAL, bg="#ffffff")
         else:
             self.batch_sizes_entry.config(state=tk.DISABLED, bg=COLORS["secondary"])
 
     def toggle_resize(self):
-        if self.redimensionar.get():
+        if self.convertendo:
+            self.largura_entry.config(state=tk.DISABLED, bg=COLORS["secondary"])
+        elif self.redimensionar.get():
             self.largura_entry.config(state=tk.NORMAL, bg="#ffffff")
         else:
             self.largura_entry.config(state=tk.DISABLED, bg=COLORS["secondary"])
+
+    def on_toggle_replace_in_place(self):
+        if self.substituir_no_lugar.get():
+            self.manter_estrutura.set(False)
+        self.atualizar_estado()
 
     def _validate_number(self, value):
         """Valida entrada numérica"""
@@ -415,7 +491,26 @@ class ConversorHEIC:
         """Atualiza label do slider de qualidade"""
         self.quality_label.config(text=f"{int(float(value))}%")
 
-    def _generate_report(self, output_folder, details, duration, success, errors, total):
+    def _open_path(self, path):
+        """Tenta abrir arquivo/pasta no gerenciador padrão do sistema."""
+        target = str(path)
+        try:
+            if sys.platform.startswith("linux"):
+                subprocess.Popen(["xdg-open", target], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", target], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            elif os.name == "nt":
+                subprocess.Popen(["cmd", "/c", "start", "", target], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            print(f"Failed to open path {target}: {e}")
+
+    def _safe_csv_cell(self, value):
+        text = str(value).replace("\r", " ").replace("\n", " ")
+        if text.startswith(("=", "+", "-", "@")):
+            return "'" + text
+        return text
+
+    def _generate_report(self, output_folder, details, duration, success, errors, total, formato):
         """Gera relatório HTML detalhado da conversão"""
         try:
             # Calcular estatísticas
@@ -423,15 +518,17 @@ class ConversorHEIC:
             total_after = sum(d["after"] for d in details)
             total_saved = total_before - total_after
             percent_saved = (total_saved / total_before * 100) if total_before > 0 else 0
+            errors_percent = (errors / total * 100) if total > 0 else 0
+            avg_seconds = (duration / success) if success > 0 else 0
             
             # Top 10 que mais economizaram
             top_10 = sorted(details, key=lambda x: x["saved"], reverse=True)[:10]
             
             # NOVO: Gerar relatório para IA (CSV)
-            self._generate_ai_report(output_folder, details)
+            self._generate_ai_report(output_folder, details, formato)
             
             # Gerar HTML (código existente continua...)
-            html = f"""<!DOCTYPE html>
+            report_html = f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
@@ -490,7 +587,7 @@ class ConversorHEIC:
             <div class="stat-card error">
                 <h3>Erros</h3>
                 <div class="value">{errors}</div>
-                <div class="sub">{(errors/total*100):.1f}% falhas</div>
+                <div class="sub">{errors_percent:.1f}% falhas</div>
             </div>
             <div class="stat-card savings">
                 <h3>Economia Total</h3>
@@ -500,7 +597,7 @@ class ConversorHEIC:
             <div class="stat-card">
                 <h3>Tempo</h3>
                 <div class="value">{int(duration//60)}:{int(duration%60):02d}</div>
-                <div class="sub">{duration/success:.2f}s por imagem</div>
+                <div class="sub">{avg_seconds:.2f}s por imagem</div>
             </div>
         </div>
         
@@ -533,20 +630,21 @@ class ConversorHEIC:
                 </tr>"""
             
             for item in top_10:
-                html += f"""
+                safe_name = html.escape(str(item["file"]))
+                report_html += f"""
                 <tr>
-                    <td class="file-name">{item['file']}</td>
+                    <td class="file-name">{safe_name}</td>
                     <td class="size">{item['before']/1024:.1f} KB</td>
                     <td class="size">{item['after']/1024:.1f} KB</td>
                     <td class="savings">-{item['saved']/1024:.1f} KB ({item['percent']:.1f}%)</td>
                 </tr>"""
             
-            html += f"""
+            report_html += f"""
             </table>
         </div>
         
         <div class="footer">
-            <p><strong>Pasta de saída:</strong> {output_folder}</p>
+            <p><strong>Pasta de saída:</strong> {html.escape(str(output_folder))}</p>
             <p style="margin-top: 10px;">Gerado por BrJoy WebP Optimizer v1.1</p>
             <a href="https://github.com/ibrumatte/brjoy-webp-optimizer" class="export-btn">GitHub</a>
         </div>
@@ -557,18 +655,20 @@ class ConversorHEIC:
             # Salvar relatório
             report_path = output_folder / "conversion-report.html"
             with open(report_path, "w", encoding="utf-8") as f:
-                f.write(html)
+                f.write(report_html)
             
-            # Abrir relatório no navegador
-            subprocess.run(["xdg-open", str(report_path)])
+            self._open_path(report_path)
             
         except Exception as e:
             print(f"Failed to generate report: {e}")
 
-    def _generate_ai_report(self, output_folder, details):
+    def _generate_ai_report(self, output_folder, details, formato):
         """Gera relatório estruturado para IA fazer substituições no código"""
         try:
-            formato = self.formato.get()
+            if not details:
+                return
+            
+            first_file = str(details[0]["file"]).replace("\r", " ").replace("\n", " ")
             
             # Criar relatório TXT para IA
             ai_report = f"""# BrJoy WebP Optimizer - AI Code Update Report
@@ -590,7 +690,7 @@ class ConversorHEIC:
             ai_report += "# ----------------------\n\n"
             
             for item in details:
-                original_name = item["file"]
+                original_name = str(item["file"]).replace("\r", " ").replace("\n", " ")
                 # Remover extensão original e adicionar nova
                 name_without_ext = Path(original_name).stem
                 new_name = f"{name_without_ext}.{formato}"
@@ -603,7 +703,7 @@ class ConversorHEIC:
             ai_report += "ANTES,DEPOIS,ECONOMIA_KB,ECONOMIA_PERCENT\n"
             
             for item in details:
-                original_name = item["file"]
+                original_name = str(item["file"]).replace("\r", " ").replace("\n", " ")
                 name_without_ext = Path(original_name).stem
                 new_name = f"{name_without_ext}.{formato}"
                 saved_kb = item["saved"] / 1024
@@ -618,24 +718,24 @@ class ConversorHEIC:
 # -----------------------------------
 
 # HTML:
-# <img src="images/{details[0]['file']}" /> 
+# <img src="images/{first_file}" /> 
 # ↓
-# <img src="images/{Path(details[0]['file']).stem}.{formato}" />
+# <img src="images/{Path(first_file).stem}.{formato}" />
 
 # CSS:
-# background-image: url('images/{details[0]['file']}');
+# background-image: url('images/{first_file}');
 # ↓
-# background-image: url('images/{Path(details[0]['file']).stem}.{formato}');
+# background-image: url('images/{Path(first_file).stem}.{formato}');
 
 # JavaScript/React:
-# import hero from './images/{details[0]['file']}'
+# import hero from './images/{first_file}'
 # ↓
-# import hero from './images/{Path(details[0]['file']).stem}.{formato}'
+# import hero from './images/{Path(first_file).stem}.{formato}'
 
 # Markdown:
-# ![Alt text](images/{details[0]['file']})
+# ![Alt text](images/{first_file})
 # ↓
-# ![Alt text](images/{Path(details[0]['file']).stem}.{formato})
+# ![Alt text](images/{Path(first_file).stem}.{formato})
 
 # ============================================================
 # PROMPT SUGERIDO PARA IA:
@@ -655,10 +755,11 @@ class ConversorHEIC:
             
             # Também salvar CSV puro
             csv_path = output_folder / "conversions.csv"
-            with open(csv_path, "w", encoding="utf-8") as f:
-                f.write("ANTES,DEPOIS,TAMANHO_ANTES_KB,TAMANHO_DEPOIS_KB,ECONOMIA_KB,ECONOMIA_PERCENT\n")
+            with open(csv_path, "w", encoding="utf-8", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["ANTES", "DEPOIS", "TAMANHO_ANTES_KB", "TAMANHO_DEPOIS_KB", "ECONOMIA_KB", "ECONOMIA_PERCENT"])
                 for item in details:
-                    original_name = item["file"]
+                    original_name = str(item["file"]).replace("\r", " ").replace("\n", " ")
                     name_without_ext = Path(original_name).stem
                     new_name = f"{name_without_ext}.{formato}"
                     before_kb = item["before"] / 1024
@@ -666,7 +767,14 @@ class ConversorHEIC:
                     saved_kb = item["saved"] / 1024
                     percent = item["percent"]
                     
-                    f.write(f"{original_name},{new_name},{before_kb:.1f},{after_kb:.1f},{saved_kb:.1f},{percent:.1f}\n")
+                    writer.writerow([
+                        self._safe_csv_cell(original_name),
+                        self._safe_csv_cell(new_name),
+                        f"{before_kb:.1f}",
+                        f"{after_kb:.1f}",
+                        f"{saved_kb:.1f}",
+                        f"{percent:.1f}",
+                    ])
             
             print(f"✅ AI Report: {ai_report_path}")
             print(f"✅ CSV: {csv_path}")
@@ -727,17 +835,24 @@ class ConversorHEIC:
     def verificar_dependencias(self):
         try:
             subprocess.run(["convert", "-version"], capture_output=True, check=True)
-        except:
+        except (subprocess.CalledProcessError, FileNotFoundError):
             resposta = messagebox.askyesno(
                 "ImageMagick não encontrado",
                 "O ImageMagick é necessário para converter imagens.\n\nDeseja instalar agora?"
             )
             if resposta:
-                subprocess.run(["x-terminal-emulator", "-e", "sudo apt install imagemagick"])
+                if shutil.which("x-terminal-emulator"):
+                    subprocess.run(["x-terminal-emulator", "-e", "sudo apt install imagemagick"])
+                else:
+                    messagebox.showinfo(
+                        "Instalação manual",
+                        "Abra um terminal e execute:\n\nsudo apt install imagemagick"
+                    )
 
-    def criar_pasta_sessao(self):
+    def criar_pasta_sessao(self, pasta_origem=None):
         if not self.pasta_saida.get():
-            pasta_origem = Path(self.arquivos[0]["path"]).parent
+            if pasta_origem is None:
+                pasta_origem = Path(self.arquivos[0]["path"]).parent
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
             try:
@@ -752,7 +867,7 @@ class ConversorHEIC:
                     nome_pasta = result.stdout.strip()
                 else:
                     nome_pasta = "BrJoy_" + timestamp
-            except:
+            except (subprocess.SubprocessError, FileNotFoundError, OSError):
                 nome_pasta = "BrJoy_" + timestamp
 
             pasta_final = pasta_origem / nome_pasta
@@ -760,7 +875,22 @@ class ConversorHEIC:
             self.pasta_saida.set(str(pasta_final))
             return pasta_final
         else:
-            return Path(self.pasta_saida.get())
+            pasta_final = Path(self.pasta_saida.get())
+            pasta_final.mkdir(parents=True, exist_ok=True)
+            return pasta_final
+
+    def _get_session_folder(self, arquivos_snapshot, config):
+        """Resolve pasta base da sessão para histórico/relatórios."""
+        if self.pasta_saida.get():
+            pasta = Path(self.pasta_saida.get())
+            pasta.mkdir(parents=True, exist_ok=True)
+            return pasta
+
+        first_parent = Path(arquivos_snapshot[0]["path"]).parent
+        if config["substituir_no_lugar"]:
+            return first_parent
+
+        return self.criar_pasta_sessao(pasta_origem=first_parent)
 
     def criar_interface(self):
         # Header compacto
@@ -906,11 +1036,19 @@ class ConversorHEIC:
 
         # Batch sizes
         self.batch_sizes_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(config_inner, text="Batch Multiple Sizes", variable=self.batch_sizes_var,
-                      command=self.toggle_batch_sizes,
-                      font=("Arial", 9, "bold"), bg=COLORS["card"], fg=COLORS["text"],
-                      selectcolor=COLORS["card"], activebackground=COLORS["card"],
-                      highlightthickness=0).pack(anchor=tk.W, pady=(0, 6))
+        self.check_batch = tk.Checkbutton(
+            config_inner,
+            text="Batch Multiple Sizes",
+            variable=self.batch_sizes_var,
+            command=self.toggle_batch_sizes,
+            font=("Arial", 9, "bold"),
+            bg=COLORS["card"],
+            fg=COLORS["text"],
+            selectcolor=COLORS["card"],
+            activebackground=COLORS["card"],
+            highlightthickness=0,
+        )
+        self.check_batch.pack(anchor=tk.W, pady=(0, 6))
         
         self.batch_frame = tk.Frame(config_inner, bg=COLORS["card"])
         self.batch_frame.pack(anchor=tk.W, padx=(20, 0), pady=(0, 12))
@@ -977,9 +1115,24 @@ class ConversorHEIC:
 
         tk.Frame(config_inner, bg=COLORS["border"], height=1).pack(fill=tk.X, pady=12)
 
+        # Preservar estrutura de pastas na saída
+        self.check_estrutura = tk.Checkbutton(
+            config_inner,
+            text="Manter estrutura de pastas",
+            variable=self.manter_estrutura,
+            font=("Arial", 9),
+            bg=COLORS["card"],
+            fg=COLORS["text"],
+            selectcolor=COLORS["card"],
+            activebackground=COLORS["card"],
+            highlightthickness=0,
+        )
+        self.check_estrutura.pack(anchor=tk.W, pady=(0, 8))
+
         # Opção: Substituir no lugar
         self.check_substituir = tk.Checkbutton(config_inner, text="Substituir arquivos originais (⚠️ sem backup)",
                                                variable=self.substituir_no_lugar,
+                                               command=self.on_toggle_replace_in_place,
                                                font=("Arial", 9), bg=COLORS["card"], fg="#ef4444",
                                                selectcolor=COLORS["card"], activebackground=COLORS["card"],
                                                highlightthickness=0)
@@ -1089,6 +1242,10 @@ class ConversorHEIC:
         self.atualizar_estado()
 
     @requires_idle
+    def limpar_lista(self):
+        self.limpar_arquivos()
+
+    @requires_idle
     def selecionar_arquivos(self):
         try:
             result = subprocess.run([
@@ -1110,7 +1267,12 @@ class ConversorHEIC:
 
     def atualizar_lista(self):
         self.tree.delete(*self.tree.get_children())
-        for arq in self.arquivos:
+        for idx, arq in enumerate(self.arquivos):
+            if isinstance(arq, str):
+                # Compatibilidade com listas antigas de strings.
+                entry = self._new_file_entry(arq)
+                self.arquivos[idx] = entry
+                arq = entry
             nome = arq.get("rel_path", Path(arq["path"]).name)
             size = self._format_size(arq["size"])
             self.tree.insert("", tk.END, values=(nome, size, arq["status"]))
@@ -1120,12 +1282,66 @@ class ConversorHEIC:
         if not self.arquivos or self.convertendo:
             return
 
-        pasta_final = self.criar_pasta_sessao()
+        arquivos_snapshot = [dict(arq) for arq in self.arquivos if isinstance(arq, dict)]
+        if not arquivos_snapshot:
+            return
+
+        config = self._snapshot_conversion_config()
+        validation_error = self._validate_conversion_config(config)
+        if validation_error:
+            messagebox.showerror("Configuração inválida", validation_error)
+            return
+
+        pasta_final = self._get_session_folder(arquivos_snapshot, config)
         self.convertendo = True
         self.cancel_requested = False
+        self.progress_bar["maximum"] = len(arquivos_snapshot)
+        self.progress_bar["value"] = 0
+        self.progress_label.config(text="0%")
         self.start_spinner()
         self.atualizar_estado()
-        threading.Thread(target=self._converter_thread, args=(pasta_final,), daemon=True).start()
+        threading.Thread(
+            target=self._converter_thread,
+            args=(pasta_final, arquivos_snapshot, config),
+            daemon=True,
+        ).start()
+
+    def _snapshot_conversion_config(self):
+        """Captura configurações da UI para uso seguro em background thread."""
+        largura = self.largura_max.get().strip()
+        largura_value = int(largura) if largura.isdigit() else None
+
+        altura = self.altura_max.get().strip()
+        altura_value = int(altura) if altura.isdigit() else None
+
+        batch_sizes = []
+        if self.batch_sizes_var.get():
+            sizes_str = self.batch_sizes_entry.get().strip()
+            batch_sizes = sorted({int(s.strip()) for s in sizes_str.split(",") if s.strip().isdigit() and int(s.strip()) > 0})
+
+        return {
+            "formato": self.formato.get(),
+            "redimensionar": self.redimensionar.get(),
+            "largura_max": largura_value,
+            "altura_max": altura_value,
+            "recorte_1x1": self.recorte_1x1.get(),
+            "qualidade": int(self.qualidade.get()),
+            "sharpen": self.sharpen_var.get(),
+            "brightness": int(self.brightness_var.get()),
+            "batch_sizes_enabled": self.batch_sizes_var.get(),
+            "batch_sizes": batch_sizes,
+            "substituir_no_lugar": self.substituir_no_lugar.get(),
+            "manter_estrutura": self.manter_estrutura.get(),
+        }
+
+    def _validate_conversion_config(self, config):
+        if config["batch_sizes_enabled"] and not config["batch_sizes"]:
+            return "Batch Sizes está ativo, mas não há tamanhos válidos.\n\nExemplo: 800,1200,1920"
+        if config["redimensionar"] and config["largura_max"] is None and not config["batch_sizes_enabled"]:
+            return "Redimensionar está ativo, mas a largura é inválida."
+        if config["altura_max"] is not None and config["largura_max"] is None and not config["batch_sizes_enabled"]:
+            return "Altura foi definida sem largura."
+        return None
 
     def cancelar_conversao(self):
         """Cancela a conversão em andamento"""
@@ -1152,119 +1368,183 @@ class ConversorHEIC:
             self.spinner_idx = (self.spinner_idx + 1) % len(self.spinner_frames)
             self.root.after(80, self._animate_spinner)
 
-    def _build_convert_cmd(self, input_path, width=None):
+    def _build_convert_cmd(self, input_path, config, width=None):
         """Constrói comando ImageMagick baseado nas configurações"""
         cmd = ["convert", str(input_path)]
 
         # Filtros avançados
-        if self.sharpen_var.get():
+        if config["sharpen"]:
             cmd.extend(["-sharpen", "0x1"])
         
-        brightness = self.brightness_var.get()
+        brightness = config["brightness"]
         if brightness != 100:
             cmd.extend(["-modulate", f"{brightness},100,100"])
 
-        if self.redimensionar.get():
-            try:
-                largura = width if width else int(self.largura_max.get())
-                altura = self.altura_max.get()
-                
-                if altura:  # Preset com altura definida
-                    h = int(altura)
-                    cmd.extend(["-resize", f"{largura}x{h}^", "-gravity", "center", "-extent", f"{largura}x{h}"])
-                elif self.recorte_1x1.get():  # Crop quadrado
-                    cmd.extend(["-resize", f"{largura}x{largura}^", "-gravity", "center", "-extent", f"{largura}x{largura}"])
-                else:  # Resize simples
-                    cmd.extend(["-resize", f"{largura}x>"])
-            except ValueError:
-                pass
-        elif self.recorte_1x1.get():  # Crop sem resize
+        force_width = width is not None
+        if force_width or (config["redimensionar"] and config["largura_max"]):
+            largura = width if force_width else config["largura_max"]
+            if config["altura_max"] and not force_width:
+                h = config["altura_max"]
+                cmd.extend(["-resize", f"{largura}x{h}^", "-gravity", "center", "-extent", f"{largura}x{h}"])
+            elif config["recorte_1x1"]:
+                cmd.extend(["-resize", f"{largura}x{largura}^", "-gravity", "center", "-extent", f"{largura}x{largura}"])
+            else:
+                cmd.extend(["-resize", f"{largura}x>"])
+        elif config["recorte_1x1"]:
             cmd.extend(["-gravity", "center", "-extent", "1:1"])
 
-        # 🔥 SEMPRE aplicar qualidade configurada
-        quality = int(self.qualidade.get())
-        cmd.extend(["-quality", str(quality)])
+        cmd.extend(["-quality", str(config["qualidade"])])
 
         return cmd
 
-    def _converter_thread(self, pasta_final):
+    def _resolve_output_folder(self, arquivo_info, pasta_final, config):
+        arquivo_path = Path(arquivo_info["path"])
+
+        if config["substituir_no_lugar"]:
+            return arquivo_path.parent
+
+        if config["manter_estrutura"]:
+            rel_path = Path(arquivo_info.get("rel_path", arquivo_path.name))
+            rel_parent = rel_path.parent
+            if str(rel_parent) != ".":
+                destino = pasta_final / rel_parent
+                destino.mkdir(parents=True, exist_ok=True)
+                return destino
+
+        return pasta_final
+
+    def _reserve_output_path(self, output_path, reserved_paths, reserve_lock):
+        with reserve_lock:
+            candidate = output_path
+            suffix = 1
+            while str(candidate) in reserved_paths or candidate.exists():
+                candidate = output_path.with_name(f"{output_path.stem}_{suffix}{output_path.suffix}")
+                suffix += 1
+            reserved_paths.add(str(candidate))
+            return candidate
+
+    def _update_conversion_progress_ui(self, idx, status, completed, total, size_after):
+        if 0 <= idx < len(self.arquivos) and isinstance(self.arquivos[idx], dict):
+            self.arquivos[idx]["status"] = status
+            self.arquivos[idx]["size_after"] = size_after
+            nome = self.arquivos[idx].get("rel_path", Path(self.arquivos[idx]["path"]).name)
+            size = self._format_size(self.arquivos[idx]["size"])
+            items = self.tree.get_children()
+            if idx < len(items):
+                self.tree.item(items[idx], values=(nome, size, status))
+
+        self.progress_bar["value"] = completed
+        percent = int((completed / total) * 100) if total else 0
+        self.progress_label.config(text=f"{percent}%")
+        self.status_label.config(text=f"Converting {completed}/{total} ({MAX_WORKERS} threads)...")
+
+    def _finish_conversion_ui(self, pasta_final, sucesso, erro, skipped, total, completed, canceled):
+        self.stop_spinner()
+        if canceled:
+            skipped_total = skipped + max(total - completed, 0)
+            self.status_label.config(text=f"Canceled: {sucesso} OK, {erro} errors, {skipped_total} skipped")
+            messagebox.showwarning("Canceled", f"Conversion canceled\n\n✓ {sucesso} converted\n✗ {erro} failed\n⏸ {skipped_total} skipped")
+        else:
+            self.status_label.config(text=f"Completed: {sucesso} OK, {erro} errors")
+            messagebox.showinfo("Completed", f"✓ {sucesso} converted\n✗ {erro} failed\n\nFolder: {pasta_final}")
+            self._open_path(pasta_final)
+
+        self.convertendo = False
+        self.cancel_requested = False
+        self.progress_bar["value"] = 0
+        self.progress_label.config(text="0%")
+        self.atualizar_estado()
+
+    def _converter_thread(self, pasta_final, arquivos_snapshot, config):
         """Conversão paralela usando ThreadPoolExecutor"""
-        formato = self.formato.get()
-        total = len(self.arquivos)
+        formato = config["formato"]
+        total = len(arquivos_snapshot)
         sucesso = erro = 0
+        skipped = 0
         completed = 0
         start_time = datetime.now()
         conversion_details = []  # Lista para relatório detalhado
-
-        self.progress_bar["maximum"] = total
-        self.progress_bar["value"] = 0
+        reserved_paths = set()
+        reserve_lock = threading.Lock()
 
         # Função para converter uma única imagem
         def convert_single(idx, arquivo):
             # Checar se foi cancelado
             if self.cancel_requested:
-                return (idx, Path(arquivo).name, "⏸", None, 0, 0)
+                file_label = arquivo.get("rel_path", Path(arquivo["path"]).name)
+                return (idx, file_label, "⏸", None, 0, 0)
             
-            arquivo_path = Path(arquivo)
-            size_before = arquivo_path.stat().st_size
+            arquivo_path = Path(arquivo["path"])
+            file_label = arquivo.get("rel_path", arquivo_path.name)
+            size_before = arquivo.get("size", arquivo_path.stat().st_size)
             
             # Decidir pasta de saída
-            if self.substituir_no_lugar.get():
-                # Substituir no lugar (mesma pasta do original)
-                pasta_saida = arquivo_path.parent
-            else:
-                # Usar pasta de saída configurada
-                pasta_saida = pasta_final
+            pasta_saida = self._resolve_output_folder(arquivo, pasta_final, config)
             
             try:
                 # Batch multiple sizes
-                if self.batch_sizes_var.get():
-                    sizes_str = self.batch_sizes_entry.get().strip()
-                    sizes = [int(s.strip()) for s in sizes_str.split(",") if s.strip().isdigit()]
+                if config["batch_sizes_enabled"]:
+                    sizes = config["batch_sizes"]
+                    if not sizes:
+                        return (idx, file_label, "✗", "Batch sizes invalid", 0, 0)
                     
                     total_size_after = 0
                     for size in sizes:
-                        saida = pasta_saida / f"{arquivo_path.stem}_{size}w.{formato}"
-                        cmd = self._build_convert_cmd(arquivo_path, width=size)
+                        if self.cancel_requested:
+                            return (idx, file_label, "⏸", None, size_before, 0)
+                        base_saida = pasta_saida / f"{arquivo_path.stem}_{size}w.{formato}"
+                        saida = self._reserve_output_path(base_saida, reserved_paths, reserve_lock)
+                        cmd = self._build_convert_cmd(arquivo_path, config, width=size)
                         cmd.append(str(saida))
                         subprocess.run(cmd, check=True, capture_output=True, text=True)
                         total_size_after += saida.stat().st_size
                     
-                    return (idx, arquivo_path.name, "✓", None, size_before, total_size_after)
+                    return (idx, file_label, "✓", None, size_before, total_size_after)
                 else:
                     # Single conversion
-                    saida = pasta_saida / f"{arquivo_path.stem}.{formato}"
-                    cmd = self._build_convert_cmd(arquivo_path)
+                    if self.cancel_requested:
+                        return (idx, file_label, "⏸", None, size_before, 0)
+                    base_saida = pasta_saida / f"{arquivo_path.stem}.{formato}"
+                    saida = self._reserve_output_path(base_saida, reserved_paths, reserve_lock)
+                    cmd = self._build_convert_cmd(arquivo_path, config)
                     cmd.append(str(saida))
                     subprocess.run(cmd, check=True, capture_output=True, text=True)
                     size_after = saida.stat().st_size
-                    return (idx, arquivo_path.name, "✓", None, size_before, size_after)
+                    return (idx, file_label, "✓", None, size_before, size_after)
             except subprocess.CalledProcessError as e:
                 error_msg = e.stderr.strip() if e.stderr else str(e)
                 if "not recognized" in error_msg or "command not found" in error_msg:
-                    return (idx, arquivo_path.name, "✗", "ImageMagick not installed", 0, 0)
+                    return (idx, file_label, "✗", "ImageMagick not installed", 0, 0)
                 elif "unable to open" in error_msg.lower():
-                    return (idx, arquivo_path.name, "✗", "Cannot read file", 0, 0)
+                    return (idx, file_label, "✗", "Cannot read file", 0, 0)
                 elif "memory" in error_msg.lower():
-                    return (idx, arquivo_path.name, "✗", "Out of memory", 0, 0)
+                    return (idx, file_label, "✗", "Out of memory", 0, 0)
                 else:
-                    return (idx, arquivo_path.name, "✗", f"Convert failed: {error_msg[:50]}", 0, 0)
+                    return (idx, file_label, "✗", f"Convert failed: {error_msg[:50]}", 0, 0)
             except Exception as e:
-                return (idx, arquivo_path.name, "✗", f"Error: {str(e)[:50]}", 0, 0)
+                return (idx, file_label, "✗", f"Error: {str(e)[:50]}", 0, 0)
 
         # Processar em paralelo
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            # Submeter todas as tarefas (extrair path do dict)
-            futures = {executor.submit(convert_single, idx, arq["path"]): idx for idx, arq in enumerate(self.arquivos)}
+            futures = {executor.submit(convert_single, idx, arq): idx for idx, arq in enumerate(arquivos_snapshot)}
             
             # Processar resultados conforme completam
             for future in as_completed(futures):
                 if self.cancel_requested:
                     executor.shutdown(wait=False, cancel_futures=True)
                     break
-                
-                idx, nome, status, error, size_before, size_after = future.result()
-                idx, nome, status, error, size_before, size_after = future.result()
+
+                try:
+                    idx, nome, status, error, size_before, size_after = future.result()
+                except Exception as e:
+                    idx = futures[future]
+                    ref = arquivos_snapshot[idx]
+                    nome = ref.get("rel_path", Path(ref["path"]).name)
+                    status = "✗"
+                    error = f"Internal worker error: {str(e)[:80]}"
+                    size_before = ref.get("size", 0)
+                    size_after = 0
+
                 completed += 1
                 
                 # Salvar detalhes para relatório
@@ -1277,49 +1557,34 @@ class ConversorHEIC:
                         "percent": ((size_before - size_after) / size_before * 100) if size_before > 0 else 0
                     })
                     sucesso += 1
+                elif status == "⏸":
+                    skipped += 1
                 else:
                     erro += 1
-                
-                # Atualizar UI (thread-safe)
-                try:
-                    item_id = self.tree.get_children()[idx]
-                    self.tree.item(item_id, values=(nome, status))
-                except:
-                    pass
                 
                 # Log erro para debug
                 if status == "✗" and error:
                     print(f"Error converting {nome}: {error}")
                 
-                # Atualizar progresso
-                self.progress_bar["value"] = completed
-                percent = int((completed / total) * 100)
-                self.progress_label.config(text=f"{percent}%")
-                self.status_label.config(text=f"Converting {completed}/{total} ({MAX_WORKERS} threads)...")
+                self.root.after(
+                    0,
+                    lambda idx=idx, status=status, completed=completed, total=total, size_after=size_after:
+                        self._update_conversion_progress_ui(idx, status, completed, total, size_after)
+                )
 
-        # Finalizar
-        self.stop_spinner()
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
         
         # Salvar no histórico
         if sucesso > 0:
             self._save_history(pasta_final, sucesso, erro, total)
-            # Gerar relatório HTML
-            self._generate_report(pasta_final, conversion_details, duration, sucesso, erro, total)
-        
-        if self.cancel_requested:
-            self.status_label.config(text=f"Canceled: {sucesso} OK, {erro} errors, {total-completed} skipped")
-            messagebox.showwarning("Canceled", f"Conversion canceled\n\n✓ {sucesso} converted\n✗ {erro} failed\n⏸ {total-completed} skipped")
-        else:
-            self.status_label.config(text=f"Completed: {sucesso} OK, {erro} errors")
-            messagebox.showinfo("Completed", f"✓ {sucesso} converted\n✗ {erro} failed\n\nFolder: {pasta_final}")
-            subprocess.run(["xdg-open", str(pasta_final)])
+            self._generate_report(pasta_final, conversion_details, duration, sucesso, erro, total, formato)
 
-        self.convertendo = False
-        self.cancel_requested = False
-        self.progress_label.config(text="0%")
-        self.atualizar_estado()
+        canceled = self.cancel_requested
+        self.root.after(
+            0,
+            lambda: self._finish_conversion_ui(pasta_final, sucesso, erro, skipped, total, completed, canceled)
+        )
 
 
 if __name__ == "__main__":

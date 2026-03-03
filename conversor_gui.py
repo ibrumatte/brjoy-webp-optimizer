@@ -3,7 +3,6 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import subprocess
 from pathlib import Path
-import threading
 from datetime import datetime
 
 class ConversorHEIC:
@@ -244,7 +243,8 @@ class ConversorHEIC:
         self.btn_converter.config(state=tk.DISABLED, bg='#cccccc', fg='#666666')
         self.btn_selecionar.config(state=tk.DISABLED, bg='#999999')
         
-        threading.Thread(target=self._converter_thread, daemon=True).start()
+        # Conversão no thread principal para evitar acesso Tk fora da thread da UI.
+        self.root.after(10, self._converter_thread)
     
     def _converter_thread(self):
         formato = self.formato.get()
