@@ -736,7 +736,7 @@ class ConversorHEIC:
 
     def criar_pasta_sessao(self):
         if not self.pasta_saida.get():
-            pasta_origem = Path(self.arquivos[0]).parent
+            pasta_origem = Path(self.arquivos[0]["path"]).parent
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
             try:
@@ -1240,7 +1240,7 @@ class ConversorHEIC:
                     executor.shutdown(wait=False, cancel_futures=True)
                     break
                 
-                idx, nome, status, error = future.result()
+                idx, nome, status, error, size_before, size_after = future.result()
                 idx, nome, status, error, size_before, size_after = future.result()
                 completed += 1
                 
