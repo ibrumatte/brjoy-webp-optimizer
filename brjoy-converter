@@ -149,6 +149,81 @@ class ConversorHEIC:
         self.atualizar_lista()
 
     @requires_idle
+    def show_preview(self):
+        """Mostra preview antes/depois da primeira imagem"""
+        if not self.arquivos:
+            messagebox.showinfo("Preview", "Add images first")
+            return
+        
+        # Pegar primeira imagem
+        first_img = Path(self.arquivos[0])
+        
+        try:
+            from PIL import Image, ImageTk
+            import tempfile
+            
+            # Criar preview convertido
+            with tempfile.NamedTemporaryFile(suffix=f".{self.formato.get()}", delete=False) as tmp:
+                tmp_path = tmp.name
+            
+            cmd = self._build_convert_cmd(first_img)
+            cmd.append(tmp_path)
+            subprocess.run(cmd, check=True, capture_output=True)
+            
+            # Carregar imagens
+            img_before = Image.open(first_img)
+            img_after = Image.open(tmp_path)
+            
+            # Redimensionar para preview (max 400px)
+            max_size = 400
+            img_before.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+            img_after.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+            
+            # Criar janela
+            win = tk.Toplevel(self.root)
+            win.title("Preview")
+            win.configure(bg=COLORS["bg"])
+            
+            container = tk.Frame(win, bg=COLORS["bg"])
+            container.pack(padx=16, pady=16)
+            
+            # Before
+            left = tk.Frame(container, bg=COLORS["card"], padx=12, pady=12)
+            left.pack(side=tk.LEFT, padx=(0, 8))
+            tk.Label(left, text="Before", font=("Arial", 10, "bold"),
+                    bg=COLORS["card"], fg=COLORS["text"]).pack()
+            photo_before = ImageTk.PhotoImage(img_before)
+            label_before = tk.Label(left, image=photo_before, bg=COLORS["card"])
+            label_before.image = photo_before
+            label_before.pack(pady=8)
+            
+            size_before = first_img.stat().st_size / 1024
+            tk.Label(left, text=f"{size_before:.1f} KB\n{img_before.size[0]}×{img_before.size[1]}",
+                    font=("Arial", 9), bg=COLORS["card"], fg=COLORS["text_secondary"]).pack()
+            
+            # After
+            right = tk.Frame(container, bg=COLORS["card"], padx=12, pady=12)
+            right.pack(side=tk.LEFT)
+            tk.Label(right, text="After", font=("Arial", 10, "bold"),
+                    bg=COLORS["card"], fg=COLORS["text"]).pack()
+            photo_after = ImageTk.PhotoImage(img_after)
+            label_after = tk.Label(right, image=photo_after, bg=COLORS["card"])
+            label_after.image = photo_after
+            label_after.pack(pady=8)
+            
+            size_after = Path(tmp_path).stat().st_size / 1024
+            reduction = ((size_before - size_after) / size_before) * 100
+            tk.Label(right, text=f"{size_after:.1f} KB\n{img_after.size[0]}×{img_after.size[1]}\n-{reduction:.0f}%",
+                    font=("Arial", 9), bg=COLORS["card"], fg="#10b981").pack()
+            
+            # Cleanup
+            Path(tmp_path).unlink(missing_ok=True)
+            
+        except ImportError:
+            messagebox.showerror("Error", "PIL/Pillow not installed\n\nInstall: pip install pillow")
+        except Exception as e:
+            messagebox.showerror("Error", f"Preview failed: {str(e)}")
+
     def aplicar_preset(self, event=None):
         preset = PRESETS.get(self.preset_var.get())
         if not preset:
@@ -474,6 +549,12 @@ class ConversorHEIC:
 
         actions_frame = tk.Frame(files_header, bg=COLORS["card"])
         actions_frame.pack(side=tk.RIGHT)
+
+        self.btn_preview = tk.Button(actions_frame, text="👁️",
+                                     command=self.show_preview,
+                                     font=("Arial", 11), bg=COLORS["secondary"], fg=COLORS["text"],
+                                     padx=8, pady=2, cursor="hand2", relief=tk.FLAT, bd=0)
+        self.btn_preview.pack(side=tk.LEFT, padx=(0, 4))
 
         self.btn_adicionar = tk.Button(actions_frame, text="📂 Escanear Pasta",
                                        command=self.escanear_pasta,
