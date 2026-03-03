@@ -1,116 +1,115 @@
 # BrJoy Web Optimizer
 
-Pipeline de otimização de imagens para websites. Converta JPG/PNG para WebP em lote, mantenha estrutura de diretórios e veja quanto economizou.
+Desktop pipeline to optimize images for web. Batch convert JPG/PNG to WebP, preserve directory structure, and generate savings reports.
 
-## 🎯 Para Quem É
+## 🎯 Who Is This For
 
-- Desenvolvedores frontend (Next.js, Astro, Hugo, Vite)
-- Agências web otimizando sites de clientes
-- Freelancers reduzindo custos de hospedagem
-- Times melhorando Core Web Vitals
+- Frontend developers (Next.js, Astro, Hugo, Vite)
+- Web agencies optimizing client sites
+- Freelancers reducing hosting costs
+- Teams improving Core Web Vitals
 
 ## ✨ Features V1
 
-- ✅ Scan recursivo de pastas (ignora `node_modules`, `.git`, etc)
-- ✅ 6 presets web (Hero, Blog, Thumbnail, Mobile, Avatar, Original)
-- ✅ Slider de qualidade 60-100% (padrão: 85%)
-- ✅ Mantém estrutura de diretórios
-- ✅ Relatório HTML com economia de espaço
-- ✅ Modo não-destrutivo (nunca sobrescreve originais)
-- ✅ Drag & Drop de arquivos/pastas
-- ✅ Atalhos de teclado (Ctrl+O, Delete, Ctrl+Enter)
+- ✅ Recursive folder scan (ignores `node_modules`, `.git`, etc)
+- ✅ 6 web presets (Hero, Blog, Thumbnail, Mobile, Avatar, Original)
+- ✅ Quality slider 60-100% (default: 85%)
+- ✅ Preserves directory structure
+- ✅ HTML report with space savings
+- ✅ Non-destructive mode (never overwrites originals)
+- ✅ Drag & Drop files/folders
+- ✅ Keyboard shortcuts (Ctrl+O, Delete, Ctrl+Enter)
 
-## 🚀 Instalação Rápida
+## 🚀 Quick Install
 
 ```bash
-# 1. Clonar repositório
-git clone https://github.com/brjoy/web-optimizer.git
-cd web-optimizer
+# 1. Clone repository
+git clone https://github.com/brjoy/image-pipeline.git
+cd image-pipeline
 
-# 2. Instalar dependências
+# 2. Install dependencies
 pip3 install tkinterdnd2
 
-# 3. Instalar ImageMagick
+# 3. Install ImageMagick
 sudo apt install imagemagick
 
-# 4. Executar
+# 4. Run
 python3 brjoy-converter
 ```
 
-## 📖 Uso Básico
+## 📖 Basic Usage
 
-1. **Escanear**: Clique "📂 Escanear Pasta" e selecione pasta raiz
-2. **Preset**: Escolha "Mobile Optimized" (recomendado)
-3. **Converter**: Clique "✨ Converter (N)"
-4. **Resultado**: Veja relatório e pasta de saída
+1. **Scan**: Click "📂 Scan Folder" and select root folder
+2. **Preset**: Choose "Mobile Optimized" (recommended)
+3. **Convert**: Click "✨ Convert (N)"
+4. **Result**: View report and output folder
 
-**Exemplo:**
+**Example:**
 ```
-Entrada: /projeto/public (247 imagens, 156.8 MB)
-Saída: /brjoy-output (247 imagens, 42.3 MB)
-Economia: 114.5 MB (73%) 🎉
+Input: /project/public (247 images, 156.8 MB)
+Output: /brjoy-output (247 images, 42.3 MB)
+Savings: 114.5 MB (73%) 🎉
 ```
 
-## 📊 Presets Web
+## 📊 Web Presets
 
-| Preset | Dimensões | Qualidade | Uso |
-|--------|-----------|-----------|-----|
+| Preset | Dimensions | Quality | Use Case |
+|--------|-----------|---------|----------|
 | Hero Image | 1920x1080 | 85% | Banners, headers |
-| Blog Post | 1200x630 | 85% | Open Graph, artigos |
-| Thumbnail | 400x300 | 80% | Listagens, grids |
+| Blog Post | 1200x630 | 85% | Open Graph, articles |
+| Thumbnail | 400x300 | 80% | Listings, grids |
 | Mobile Optimized | 800px | 80% | Mobile-first ⭐ |
-| Avatar/Icon | 256x256 | 90% | Perfis, ícones |
-| Original Quality | Mantém | 95% | Sem perda visual |
+| Avatar/Icon | 256x256 | 90% | Profiles, icons |
+| Original Quality | Keep | 95% | No visual loss |
 
-## 🎓 Guia Completo
+## 🎓 Full Guide
 
-Veja [GUIA.md](GUIA.md) para:
-- Casos de uso detalhados
-- Configurações avançadas
+See [GUIDE.md](GUIDE.md) for:
+- Detailed use cases
+- Advanced settings
 - Troubleshooting
-- Dicas pro
+- Pro tips
 
 ## 📋 Roadmap
 
-- **V1** (Atual): Desktop Pro - conversão em massa + relatórios ✅
-- **V2** (Q2 2026): CLI para CI/CD
-- **V3** (Q3 2026): Gerador de snippets `<picture>`
-- **V4** (Q4 2026): Plugin WordPress + integrações CDN
+- **V1** (Current): Desktop Pro - batch conversion + reports ✅
+- **V2** (Q2 2026): CLI for CI/CD
+- **V3** (Q3 2026): `<picture>` snippet generator
+- **V4** (Q4 2026): WordPress plugin + CDN integrations
 
 ## 🐛 Troubleshooting
 
-**ImageMagick não encontrado?**
+**ImageMagick not found?**
 ```bash
 sudo apt install imagemagick
 ```
 
-**Drag & Drop não funciona?**
+**Drag & Drop not working?**
 ```bash
 pip3 install tkinterdnd2
 ```
 
-**Conversão lenta?**
-- Reduza qualidade para 80%
-- Processe em lotes menores
+**Slow conversion?**
+- Reduce quality to 80%
+- Process smaller batches
 
-## 🤝 Contribuindo
+## 🤝 Contributing
 
-1. Fork o projeto
-2. Crie branch (`git checkout -b feature/nova-feature`)
-3. Commit (`git commit -m 'Add nova feature'`)
-4. Push (`git push origin feature/nova-feature`)
-5. Abra Pull Request
+1. Fork the project
+2. Create branch (`git checkout -b feature/new-feature`)
+3. Commit (`git commit -m 'Add new feature'`)
+4. Push (`git push origin feature/new-feature`)
+5. Open Pull Request
 
-## 📄 Licença
+## 📄 License
 
-MIT License - veja [LICENSE](LICENSE)
+MIT License - see [LICENSE](LICENSE)
 
-## 💬 Suporte
+## 💬 Support
 
-- 📧 Email: brjoy@example.com
-- 🐛 Issues: [GitHub Issues](https://github.com/brjoy/web-optimizer/issues)
-- 💬 Discord: [BrJoy Community](https://discord.gg/brjoy)
+- 📧 Email: isac@brjoy.com.br
+- 🐛 Issues: [GitHub Issues](https://github.com/brjoy/image-pipeline/issues)
 
 ---
 
-**⭐ Se este projeto te ajudou, deixe uma estrela no GitHub!**
+**⭐ If this project helped you, leave a star on GitHub!**
