@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BrJoy Image Converter</title>
+    <link rel="stylesheet" href="./assets/app.css?v=20260303-1748" />
+  </head>
+  <body>
+    <div id="app" class="app">
+      <header class="topbar">
+        <div class="brand-wrap">
+          <div class="brand">BrJoy</div>
+          <div class="subtitle" data-i18n="header.subtitle">Batch convert images to WebP/PNG</div>
+        </div>
+        <nav class="tabs">
+          <button id="tab-converter" type="button" class="tab active" data-i18n="tabs.converter">Converter</button>
+          <button id="tab-report" type="button" class="tab" data-i18n="tabs.report">Report</button>
+        </nav>
+        <div class="controls">
+          <select id="locale-select">
+            <option value="pt-BR">PT-BR</option>
+            <option value="en-US">EN-US</option>
+          </select>
+          <select id="theme-select">
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+          <select id="density-select" disabled>
+            <option value="compact">Compact</option>
+          </select>
+        </div>
+      </header>
+      <div id="notice" class="notice" hidden></div>
+
+      <main class="main">
+        <section id="view-converter" class="view active">
+          <div class="grid">
+            <section class="card files-card">
+              <div class="card-header">
+                <div>
+                  <h2 data-i18n="labels.files">Files</h2>
+                  <p id="files-meta">0 arquivo(s) • 0 B</p>
+                </div>
+                <div class="actions">
+                  <button id="btn-add-files" type="button" class="btn primary" data-i18n="actions.addFiles">Add Files</button>
+                  <button id="btn-scan-folder" type="button" class="btn" data-i18n="actions.scanFolder">Scan Folder</button>
+                  <button id="btn-clear-files" type="button" class="btn" data-i18n="actions.clear">Clear</button>
+                </div>
+              </div>
+
+              <div class="table-scroll">
+                <div id="drop-zone" class="drop-zone">
+                  <div class="drop-title" data-i18n="drop.zoneTitle">Arraste arquivos/pastas aqui</div>
+                  <div id="drop-hint" class="drop-hint">Fallback por botões se o sistema não expuser os caminhos.</div>
+                </div>
+                <table id="files-table">
+                  <thead>
+                    <tr>
+                      <th>Nome</th>
+                      <th class="right">Tamanho</th>
+                      <th class="center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="files-body"></tbody>
+                </table>
+                <div id="files-empty" class="empty" data-i18n="state.emptyFiles">No files selected</div>
+              </div>
+
+              <div class="footer">
+                <div class="status-row">
+                  <span id="status-message">Ready</span>
+                  <span id="status-percent">0%</span>
+                </div>
+                <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
+                <div class="bottom-row">
+                  <span id="history-count">0 entradas no histórico</span>
+                  <div class="actions">
+                    <button id="btn-cancel" type="button" class="btn danger" data-i18n="actions.cancel" hidden>Cancel</button>
+                    <button id="btn-retry-errors" type="button" class="btn" data-i18n="actions.retryErrors" hidden>Retry Failed</button>
+                    <button id="btn-convert" type="button" class="btn success" data-i18n="actions.convert">Convert</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <aside class="card settings-card">
+              <h2 data-i18n="labels.settings">Settings</h2>
+              <div class="side-scroll">
+                <section class="settings-group">
+                  <h3 data-i18n="labels.essentials">Essentials</h3>
+
+                  <label>Preset
+                    <select id="preset-select"></select>
+                  </label>
+
+                  <label data-i18n="labels.format">Format</label>
+                  <div class="split">
+                    <button id="fmt-webp" type="button" class="btn small active">WebP</button>
+                    <button id="fmt-png" type="button" class="btn small">PNG</button>
+                  </div>
+
+                  <label id="quality-label">Qualidade (85%)</label>
+                  <input id="quality" type="range" min="60" max="100" value="85" />
+
+                  <label data-i18n="labels.scanExtensions">Scan extensions filter</label>
+                  <input id="scan-extensions" type="text" placeholder="png,jpg,webp" />
+
+                  <label class="toggle"><span data-i18n="labels.resize">Resize</span><input id="resize" type="checkbox" /></label>
+                  <div id="resize-fields" class="split">
+                    <input id="width" type="number" placeholder="Width" value="1920" />
+                    <input id="height" type="number" placeholder="Height" />
+                  </div>
+                </section>
+
+                <section class="settings-group">
+                  <h3 data-i18n="labels.outputStrategy">Output strategy</h3>
+                  <label data-i18n="labels.conflictPolicy">Name conflict policy</label>
+                  <select id="conflict-policy">
+                    <option id="conflict-option-version" value="version">Version</option>
+                    <option id="conflict-option-overwrite" value="overwrite">Overwrite</option>
+                    <option id="conflict-option-skip" value="skip">Skip</option>
+                  </select>
+                  <label class="toggle"><span data-i18n="labels.keepStructure">Keep folder structure</span><input id="keep-structure" type="checkbox" checked /></label>
+                  <label class="toggle danger-row"><span data-i18n="labels.replaceInPlace">Replace in place (no backup)</span><input id="replace-in-place" type="checkbox" /></label>
+                  <label class="toggle"><span data-i18n="labels.backupEnabled">Automatic backup</span><input id="backup-enabled" type="checkbox" /></label>
+                  <div id="backup-strategy-wrap">
+                    <label data-i18n="labels.backupStrategy">Backup strategy</label>
+                    <select id="backup-strategy">
+                      <option id="backup-option-bak" value="bak">.bak file</option>
+                      <option id="backup-option-folder" value="folder">_backup folder</option>
+                    </select>
+                  </div>
+                  <p id="output-hint" class="settings-hint" data-i18n="state.outputManagedHint">Output folder is managed automatically by the selected strategy.</p>
+                  <div id="output-folder-wrap">
+                    <label data-i18n="labels.outputFolder">Output folder</label>
+                    <div class="split">
+                      <input id="output-folder" type="text" readonly />
+                      <button id="btn-output-folder" type="button" class="btn small" data-i18n="actions.chooseFolder">Choose</button>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="settings-group advanced">
+                  <button id="advanced-toggle" type="button" class="advanced-toggle" data-i18n="labels.advanced">Advanced image options</button>
+                  <div id="advanced-body" class="advanced-body is-hidden">
+                    <label class="toggle"><span data-i18n="labels.crop">Crop 1:1</span><input id="crop" type="checkbox" /></label>
+
+                    <label class="toggle"><span data-i18n="labels.batchSizes">Batch multiple sizes</span><input id="batch-enabled" type="checkbox" /></label>
+                    <div id="batch-sizes-wrap">
+                      <input id="batch-sizes" type="text" value="800,1200,1920" />
+                    </div>
+
+                    <label class="toggle"><span data-i18n="labels.sharpen">Sharpen</span><input id="sharpen" type="checkbox" /></label>
+                    <label id="brightness-label">Brightness (100%)</label>
+                    <input id="brightness" type="range" min="50" max="150" value="100" />
+                  </div>
+                </section>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section id="view-report" class="view">
+          <div class="report-grid">
+            <section class="card">
+              <div class="card-header compact">
+                <h2 data-i18n="labels.reports">Reports</h2>
+                <div class="actions">
+                  <button id="btn-clear-history" type="button" class="btn" data-i18n="actions.clearHistory">Clear History</button>
+                  <button id="btn-refresh-reports" type="button" class="btn" data-i18n="actions.refresh">Refresh</button>
+                </div>
+              </div>
+              <div class="report-filters">
+                <input id="report-search" type="text" placeholder="Buscar por texto/caminho" />
+                <input id="report-date" type="date" />
+              </div>
+              <div id="reports-list" class="reports-list"></div>
+              <div class="history-panel">
+                <h3 data-i18n="labels.history">History</h3>
+                <div id="history-list" class="history-list"></div>
+              </div>
+            </section>
+
+            <section class="card">
+              <div class="card-header compact">
+                <h2 data-i18n="report.preview">AI report preview</h2>
+                <div class="actions">
+                  <button id="open-html" type="button" class="btn small" data-i18n="report.openHtml">Open HTML</button>
+                  <button id="open-ai" type="button" class="btn small" data-i18n="report.openAi">Open AI TXT</button>
+                  <button id="open-csv" type="button" class="btn small" data-i18n="report.openCsv">Open CSV</button>
+                  <button id="open-folder" type="button" class="btn small" data-i18n="report.openFolder">Open Folder</button>
+                  <button id="copy-report" type="button" class="btn small" data-i18n="report.copyText">Copy Text</button>
+                </div>
+              </div>
+              <pre id="report-preview" class="preview"></pre>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./assets/app.js?v=20260303-1748"></script>
+  </body>
+</html>

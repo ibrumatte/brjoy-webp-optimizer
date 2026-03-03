@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import csv
 import html
+import json
 import os
 import shutil
 import sys
@@ -10,7 +11,7 @@ os.environ["GDK_BACKEND"] = "x11"
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import threading
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -25,32 +26,33 @@ except ImportError:
 
 # UI Constants
 COLORS_LIGHT = {
-    "bg": "#f5f5f7",
+    "bg": "#eef3f9",
     "card": "#ffffff",
-    "border": "#e6e6ea",
-    "text": "#111111",
-    "text_secondary": "#6b7280",
-    "text_muted": "#9ca3af",
-    "primary": "#0a84ff",
-    "primary_hover": "#0070e0",
-    "secondary": "#f5f5f7",
-    "drop_hover": "#eaf2ff",
+    "border": "#d7e1ee",
+    "text": "#0f172a",
+    "text_secondary": "#475569",
+    "text_muted": "#94a3b8",
+    "primary": "#0284c7",
+    "primary_hover": "#0369a1",
+    "secondary": "#e2e8f0",
+    "drop_hover": "#dbeafe",
 }
 
 COLORS_DARK = {
-    "bg": "#1c1c1e",
-    "card": "#2c2c2e",
-    "border": "#3a3a3c",
-    "text": "#ffffff",
-    "text_secondary": "#98989d",
-    "text_muted": "#636366",
-    "primary": "#0a84ff",
-    "primary_hover": "#0070e0",
-    "secondary": "#3a3a3c",
-    "drop_hover": "#1a3a52",
+    "bg": "#0f172a",
+    "card": "#162033",
+    "border": "#27364f",
+    "text": "#f8fafc",
+    "text_secondary": "#cbd5e1",
+    "text_muted": "#94a3b8",
+    "primary": "#38bdf8",
+    "primary_hover": "#0ea5e9",
+    "secondary": "#1e2b40",
+    "drop_hover": "#1d3a5f",
 }
 
 COLORS = COLORS_LIGHT.copy()
+FONT_UI = "Segoe UI"
 
 PRESETS = {
     "Hero Image": {"resize": True, "width": 1920, "height": 1080, "crop": True, "quality": 85},
@@ -72,10 +74,10 @@ MAX_WORKERS = min(4, multiprocessing.cpu_count())  # Use 4 threads or CPU count,
 # Widget styles
 WIDGET_STYLE = {
     "card_label": {"bg": COLORS["card"], "fg": COLORS["text"]},
-    "card_label_bold": {"bg": COLORS["card"], "fg": COLORS["text"], "font": ("Arial", 10, "bold")},
-    "card_label_sub": {"bg": COLORS["card"], "fg": COLORS["text_secondary"], "font": ("Arial", 9, "bold")},
-    "button_secondary": {"bg": COLORS["secondary"], "fg": COLORS["text"], "font": ("Arial", 9), "padx": 12, "pady": 4, "cursor": "hand2", "relief": tk.FLAT, "bd": 0},
-    "button_primary": {"bg": COLORS["primary"], "fg": "#ffffff", "font": ("Arial", 10, "bold"), "padx": 24, "pady": 8, "cursor": "hand2", "relief": tk.FLAT, "bd": 0},
+    "card_label_bold": {"bg": COLORS["card"], "fg": COLORS["text"], "font": (FONT_UI, 10, "bold")},
+    "card_label_sub": {"bg": COLORS["card"], "fg": COLORS["text_secondary"], "font": (FONT_UI, 9, "bold")},
+    "button_secondary": {"bg": COLORS["secondary"], "fg": COLORS["text"], "font": (FONT_UI, 9), "padx": 12, "pady": 4, "cursor": "hand2", "relief": tk.FLAT, "bd": 0},
+    "button_primary": {"bg": COLORS["primary"], "fg": "#ffffff", "font": (FONT_UI, 10, "bold"), "padx": 24, "pady": 8, "cursor": "hand2", "relief": tk.FLAT, "bd": 0},
 }
 
 
@@ -91,18 +93,13 @@ class ConversorHEIC:
     def __init__(self, root):
         self.root = root
         self.root.title("BrJoy Image Converter")
-        self.root.geometry("800x600")
+        self.root.geometry("1040x720")
         self.root.configure(bg=COLORS["bg"])
         self.root.resizable(True, True)
-        self.root.minsize(700, 500)
+        self.root.minsize(900, 620)
 
-        try:
-            icon_path = Path.home() / ".local/share/brjoy-image-converter/icon.png"
-            if icon_path.exists():
-                icon = tk.PhotoImage(file=str(icon_path))
-                self.root.iconphoto(True, icon)
-        except Exception:
-            pass
+        self._icon_image = None
+        self._apply_window_icon()
 
         # State
         self.formato = tk.StringVar(value="webp")
@@ -124,13 +121,96 @@ class ConversorHEIC:
         self.spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
         self.spinner_idx = 0
         self.dark_mode = False
-        self.history_file = Path.home() / ".local/share/brjoy-image-converter/history.txt"
-        self.history_file.parent.mkdir(parents=True, exist_ok=True)
+        self.app_data_dir = Path.home() / ".local/share/brjoy-image-converter"
+        self.app_data_dir.mkdir(parents=True, exist_ok=True)
+        self.history_file = self.app_data_dir / "history.txt"
+        self.reports_dir = self.app_data_dir / "reports"
+        self.reports_dir.mkdir(parents=True, exist_ok=True)
+        self.report_items = {}
 
+        self._setup_ttk_styles()
         self.criar_interface()
         self.setup_keyboard_shortcuts()
         self.atualizar_estado()
         self.verificar_dependencias()
+
+    def _apply_window_icon(self):
+        candidates = [
+            Path.home() / ".local/share/brjoy-image-converter/icon.webp",
+            Path(__file__).resolve().parent / "icon.webp",
+            Path.home() / ".local/share/brjoy-image-converter/icon.png",
+        ]
+        for icon_path in candidates:
+            if not icon_path.exists():
+                continue
+            try:
+                self._icon_image = tk.PhotoImage(file=str(icon_path))
+                self.root.iconphoto(True, self._icon_image)
+                return
+            except tk.TclError:
+                continue
+
+    def _setup_ttk_styles(self):
+        style = ttk.Style()
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+
+        style.configure(
+            "Treeview",
+            background=COLORS["card"],
+            fieldbackground=COLORS["card"],
+            foreground=COLORS["text"],
+            bordercolor=COLORS["border"],
+            rowheight=28,
+            font=(FONT_UI, 10),
+        )
+        style.configure(
+            "Treeview.Heading",
+            background=COLORS["secondary"],
+            foreground=COLORS["text"],
+            relief="flat",
+            font=(FONT_UI, 9, "bold"),
+        )
+        style.map(
+            "Treeview",
+            background=[("selected", COLORS["primary"])],
+            foreground=[("selected", "#ffffff")],
+        )
+
+        style.configure("TNotebook", background=COLORS["bg"], borderwidth=0)
+        style.configure(
+            "TNotebook.Tab",
+            background=COLORS["secondary"],
+            foreground=COLORS["text_secondary"],
+            padding=(14, 8),
+            font=(FONT_UI, 10, "bold"),
+        )
+        style.map(
+            "TNotebook.Tab",
+            background=[("selected", COLORS["card"])],
+            foreground=[("selected", COLORS["text"])],
+        )
+
+        style.configure(
+            "TProgressbar",
+            troughcolor=COLORS["secondary"],
+            background=COLORS["primary"],
+            bordercolor=COLORS["secondary"],
+            lightcolor=COLORS["primary"],
+            darkcolor=COLORS["primary"],
+            thickness=10,
+        )
+
+        style.configure(
+            "TCombobox",
+            fieldbackground=COLORS["card"],
+            background=COLORS["card"],
+            foreground=COLORS["text"],
+            bordercolor=COLORS["border"],
+            arrowcolor=COLORS["text_secondary"],
+        )
 
     def setup_keyboard_shortcuts(self):
         self.root.bind("<Control-o>", lambda e: self.selecionar_arquivos())
@@ -195,7 +275,7 @@ class ConversorHEIC:
             # Before
             left = tk.Frame(container, bg=COLORS["card"], padx=12, pady=12)
             left.pack(side=tk.LEFT, padx=(0, 8))
-            tk.Label(left, text="Before", font=("Arial", 10, "bold"),
+            tk.Label(left, text="Before", font=(FONT_UI, 10, "bold"),
                     bg=COLORS["card"], fg=COLORS["text"]).pack()
             photo_before = ImageTk.PhotoImage(img_before)
             label_before = tk.Label(left, image=photo_before, bg=COLORS["card"])
@@ -204,12 +284,12 @@ class ConversorHEIC:
             
             size_before = first_img.stat().st_size / 1024
             tk.Label(left, text=f"{size_before:.1f} KB\n{img_before.size[0]}×{img_before.size[1]}",
-                    font=("Arial", 9), bg=COLORS["card"], fg=COLORS["text_secondary"]).pack()
+                    font=(FONT_UI, 9), bg=COLORS["card"], fg=COLORS["text_secondary"]).pack()
             
             # After
             right = tk.Frame(container, bg=COLORS["card"], padx=12, pady=12)
             right.pack(side=tk.LEFT)
-            tk.Label(right, text="After", font=("Arial", 10, "bold"),
+            tk.Label(right, text="After", font=(FONT_UI, 10, "bold"),
                     bg=COLORS["card"], fg=COLORS["text"]).pack()
             photo_after = ImageTk.PhotoImage(img_after)
             label_after = tk.Label(right, image=photo_after, bg=COLORS["card"])
@@ -219,7 +299,7 @@ class ConversorHEIC:
             size_after = Path(tmp_path).stat().st_size / 1024
             reduction = ((size_before - size_after) / size_before) * 100
             tk.Label(right, text=f"{size_after:.1f} KB\n{img_after.size[0]}×{img_after.size[1]}\n-{reduction:.0f}%",
-                    font=("Arial", 9), bg=COLORS["card"], fg="#10b981").pack()
+                    font=(FONT_UI, 9), bg=COLORS["card"], fg="#10b981").pack()
             
             # Cleanup
             Path(tmp_path).unlink(missing_ok=True)
@@ -390,6 +470,7 @@ class ConversorHEIC:
         global COLORS
         self.dark_mode = not self.dark_mode
         COLORS.update(COLORS_DARK if self.dark_mode else COLORS_LIGHT)
+        self._setup_ttk_styles()
         self.btn_dark.config(text="☀️" if self.dark_mode else "🌙")
         
         # Recriar interface
@@ -450,6 +531,8 @@ class ConversorHEIC:
         ]:
             widget.config(state=estado)
         self.preset_combo.config(state="readonly" if not self.convertendo else tk.DISABLED)
+        if not self.convertendo and (self.substituir_no_lugar.get() or self.manter_estrutura.get()):
+            self.btn_pasta.config(state=tk.DISABLED)
         if self.substituir_no_lugar.get() and not self.convertendo:
             self.check_estrutura.config(state=tk.DISABLED)
         self.toggle_batch_sizes()
@@ -510,9 +593,226 @@ class ConversorHEIC:
             return "'" + text
         return text
 
-    def _generate_report(self, output_folder, details, duration, success, errors, total, formato):
-        """Gera relatório HTML detalhado da conversão"""
+    def _normalize_report_path(self, value):
+        return str(value).replace("\r", " ").replace("\n", " ").replace("\\", "/").strip()
+
+    def _build_converted_report_path(self, original_name, formato):
+        normalized = self._normalize_report_path(original_name)
         try:
+            converted = str(PurePosixPath(normalized).with_suffix(f".{formato}"))
+        except ValueError:
+            converted = f"{normalized}.{formato}"
+        return normalized, converted
+
+    def _sanitize_report_token(self, value):
+        raw = str(value).strip().lower()
+        cleaned = []
+        for char in raw:
+            if char.isalnum() or char in {"-", "_"}:
+                cleaned.append(char)
+            else:
+                cleaned.append("-")
+        token = "".join(cleaned)
+        token = "-".join(part for part in token.split("-") if part)
+        return token[:40] or "session"
+
+    def _create_report_folder(self, output_folder):
+        self.reports_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        source_token = self._sanitize_report_token(Path(output_folder).name)
+        folder = self.reports_dir / f"{timestamp}-{source_token}"
+        suffix = 1
+        while folder.exists():
+            folder = self.reports_dir / f"{timestamp}-{source_token}-{suffix}"
+            suffix += 1
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder
+
+    def _store_report_metadata(self, metadata):
+        meta_path = Path(metadata["report_folder"]) / "report-meta.json"
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, ensure_ascii=True, indent=2)
+        return meta_path
+
+    def _collect_report_entries(self):
+        if not self.reports_dir.exists():
+            return []
+
+        entries = []
+        meta_files = sorted(
+            self.reports_dir.glob("*/report-meta.json"),
+            key=lambda path: path.parent.stat().st_mtime,
+            reverse=True,
+        )
+        for meta_path in meta_files:
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                data["report_folder"] = str(Path(data.get("report_folder", meta_path.parent)))
+                data["html_report"] = str(Path(data.get("html_report", Path(data["report_folder"]) / "conversion-report.html")))
+                data["ai_report"] = str(Path(data.get("ai_report", Path(data["report_folder"]) / "AI-CODE-UPDATE.txt")))
+                data["csv_report"] = str(Path(data.get("csv_report", Path(data["report_folder"]) / "conversions.csv")))
+                entries.append(data)
+            except Exception as e:
+                print(f"Failed to load report metadata {meta_path}: {e}")
+        return entries
+
+    def refresh_reports_list(self, select_report=None):
+        if not hasattr(self, "reports_tree"):
+            return
+
+        self.report_items = {}
+        self.reports_tree.delete(*self.reports_tree.get_children())
+
+        entries = self._collect_report_entries()
+        for idx, entry in enumerate(entries):
+            try:
+                dt = datetime.fromisoformat(entry.get("generated_at", ""))
+            except ValueError:
+                dt = datetime.fromtimestamp(Path(entry["report_folder"]).stat().st_mtime)
+            generated = dt.strftime("%d/%m/%Y %H:%M")
+            source_folders = entry.get("source_folders") or []
+            if source_folders:
+                if len(source_folders) == 1:
+                    source_folder = Path(source_folders[0]).name or source_folders[0]
+                else:
+                    source_folder = f"{len(source_folders)} pastas"
+            else:
+                source_folder = Path(entry.get("output_folder", "")).name or "sem saída"
+            resumo = f"{entry.get('success', 0)}/{entry.get('total', 0)} ok"
+            iid = self.reports_tree.insert("", tk.END, values=(generated, source_folder, resumo))
+            self.report_items[iid] = entry
+
+        if not entries:
+            self.report_status_label.config(text=f"Nenhum relatório em {self.reports_dir}")
+            self._toggle_report_buttons(False)
+            self._show_report_preview("Nenhum relatório disponível ainda.")
+            return
+
+        self.report_status_label.config(text=f"{len(entries)} relatório(s) em {self.reports_dir}")
+        selected = None
+        if select_report:
+            target = str(Path(select_report))
+            for iid, entry in self.report_items.items():
+                if str(Path(entry.get("html_report", ""))) == target:
+                    selected = iid
+                    break
+        if selected is None:
+            selected = self.reports_tree.get_children()[0]
+
+        self.reports_tree.selection_set(selected)
+        self.reports_tree.focus(selected)
+        self._on_report_selected()
+
+    def _show_report_preview(self, text):
+        if not hasattr(self, "report_preview"):
+            return
+        self.report_preview.config(state=tk.NORMAL)
+        self.report_preview.delete("1.0", tk.END)
+        self.report_preview.insert("1.0", text)
+        self.report_preview.config(state=tk.DISABLED)
+
+    def _toggle_report_buttons(self, has_selection):
+        state = tk.NORMAL if has_selection else tk.DISABLED
+        if hasattr(self, "btn_open_report_html"):
+            self.btn_open_report_html.config(state=state)
+            self.btn_open_report_ai.config(state=state)
+            self.btn_open_report_csv.config(state=state)
+            self.btn_open_report_folder.config(state=state)
+
+    def _on_report_selected(self, event=None):
+        selection = self.reports_tree.selection() if hasattr(self, "reports_tree") else ()
+        if not selection:
+            self._toggle_report_buttons(False)
+            return
+
+        entry = self.report_items.get(selection[0])
+        if not entry:
+            self._toggle_report_buttons(False)
+            return
+
+        self._toggle_report_buttons(True)
+        ai_path = Path(entry.get("ai_report", ""))
+        if ai_path.exists():
+            preview = ai_path.read_text(encoding="utf-8", errors="ignore")
+            self._show_report_preview(preview[:6000])
+        else:
+            source_folders = entry.get("source_folders") or []
+            source_text = ", ".join(source_folders) if source_folders else entry.get("output_folder", "")
+            fallback = (
+                f"Relatório: {entry.get('html_report', '')}\n"
+                f"Pasta(s) convertida(s): {source_text}\n"
+                f"Resumo: {entry.get('success', 0)}/{entry.get('total', 0)} ok, {entry.get('errors', 0)} erros\n"
+            )
+            self._show_report_preview(fallback)
+
+    def _get_selected_report_entry(self):
+        if not hasattr(self, "reports_tree"):
+            return None
+        selection = self.reports_tree.selection()
+        if not selection:
+            return None
+        return self.report_items.get(selection[0])
+
+    def _open_selected_report_file(self, kind):
+        entry = self._get_selected_report_entry()
+        if not entry:
+            return
+
+        field_map = {
+            "html": "html_report",
+            "ai": "ai_report",
+            "csv": "csv_report",
+            "folder": "report_folder",
+        }
+        target = entry.get(field_map[kind])
+        if not target:
+            return
+        target_path = Path(target)
+        if not target_path.exists():
+            messagebox.showerror("Arquivo não encontrado", f"Não foi possível abrir:\n{target_path}")
+            return
+        self._open_path(target_path)
+
+    def _on_reports_generated(self, report_metadata):
+        html_report = report_metadata.get("html_report")
+        self.refresh_reports_list(select_report=html_report)
+        if hasattr(self, "main_tabs") and hasattr(self, "report_tab"):
+            self.main_tabs.select(self.report_tab)
+
+    def _generate_report(self, output_folder, details, duration, success, errors, total, formato, source_folders=None):
+        """Gera relatórios da conversão em pasta global do app."""
+        if not details:
+            return None
+
+        try:
+            report_folder = self._create_report_folder(output_folder)
+            resolved_source_folders = sorted({self._normalize_report_path(p) for p in (source_folders or []) if p})
+            if not resolved_source_folders:
+                resolved_source_folders = sorted({
+                    self._normalize_report_path(Path(item.get("source_path", "")).parent)
+                    for item in details
+                    if item.get("source_path")
+                })
+            if not resolved_source_folders:
+                resolved_source_folders = [self._normalize_report_path(output_folder)]
+
+            output_folders = sorted({
+                self._normalize_report_path(Path(path).parent)
+                for item in details
+                for path in item.get("output_paths", [])
+                if path
+            })
+            if not output_folders:
+                output_folders = [self._normalize_report_path(output_folder)]
+
+            source_folders_html = "".join(
+                f"<li>{html.escape(folder)}</li>" for folder in resolved_source_folders
+            )
+            output_folders_html = "".join(
+                f"<li>{html.escape(folder)}</li>" for folder in output_folders
+            )
+
             # Calcular estatísticas
             total_before = sum(d["before"] for d in details)
             total_after = sum(d["after"] for d in details)
@@ -520,14 +820,14 @@ class ConversorHEIC:
             percent_saved = (total_saved / total_before * 100) if total_before > 0 else 0
             errors_percent = (errors / total * 100) if total > 0 else 0
             avg_seconds = (duration / success) if success > 0 else 0
-            
+
             # Top 10 que mais economizaram
             top_10 = sorted(details, key=lambda x: x["saved"], reverse=True)[:10]
-            
-            # NOVO: Gerar relatório para IA (CSV)
-            self._generate_ai_report(output_folder, details, formato)
-            
-            # Gerar HTML (código existente continua...)
+
+            # Gerar relatório para IA (TXT + CSV)
+            ai_paths = self._generate_ai_report(report_folder, details, formato)
+
+            # Gerar HTML
             report_html = f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -536,15 +836,15 @@ class ConversorHEIC:
     <title>BrJoy WebP Optimizer - Relatório de Conversão</title>
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
                background: #f5f5f7; padding: 20px; }}
-        .container {{ max-width: 1000px; margin: 0 auto; background: white; 
+        .container {{ max-width: 1000px; margin: 0 auto; background: white;
                      border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
-        .header {{ background: linear-gradient(135deg, #0a84ff 0%, #0070e0 100%); 
+        .header {{ background: linear-gradient(135deg, #0a84ff 0%, #0070e0 100%);
                   color: white; padding: 40px; border-radius: 12px 12px 0 0; }}
         .header h1 {{ font-size: 32px; margin-bottom: 8px; }}
         .header p {{ opacity: 0.9; font-size: 14px; }}
-        .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
+        .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
                  gap: 20px; padding: 30px; }}
         .stat-card {{ background: #f8f8f8; padding: 20px; border-radius: 8px; }}
         .stat-card h3 {{ font-size: 14px; color: #666; margin-bottom: 8px; }}
@@ -557,16 +857,18 @@ class ConversorHEIC:
         .section h2 {{ font-size: 20px; margin-bottom: 20px; color: #111; }}
         table {{ width: 100%; border-collapse: collapse; }}
         th, td {{ text-align: left; padding: 12px; border-bottom: 1px solid #e6e6ea; }}
-        th {{ background: #f8f8f8; font-weight: 600; font-size: 12px; 
+        th {{ background: #f8f8f8; font-weight: 600; font-size: 12px;
              color: #666; text-transform: uppercase; }}
         td {{ font-size: 14px; }}
         .file-name {{ font-family: 'Courier New', monospace; color: #0a84ff; }}
         .size {{ text-align: right; }}
         .savings {{ text-align: right; color: #10b981; font-weight: 600; }}
-        .footer {{ padding: 20px 30px; background: #f8f8f8; border-radius: 0 0 12px 12px; 
+        .paths-list {{ margin: 8px 0 0 18px; text-align: left; }}
+        .paths-list li {{ margin-bottom: 4px; font-family: 'Courier New', monospace; }}
+        .footer {{ padding: 20px 30px; background: #f8f8f8; border-radius: 0 0 12px 12px;
                   text-align: center; font-size: 12px; color: #666; }}
-        .export-btn {{ display: inline-block; margin: 10px 5px; padding: 10px 20px; 
-                      background: #0a84ff; color: white; text-decoration: none; 
+        .export-btn {{ display: inline-block; margin: 10px 5px; padding: 10px 20px;
+                      background: #0a84ff; color: white; text-decoration: none;
                       border-radius: 6px; font-size: 14px; }}
         .export-btn:hover {{ background: #0070e0; }}
     </style>
@@ -577,7 +879,7 @@ class ConversorHEIC:
             <h1>🖼️ Relatório de Conversão</h1>
             <p>BrJoy WebP Optimizer v1.1 • {datetime.now().strftime("%d/%m/%Y %H:%M:%S")}</p>
         </div>
-        
+
         <div class="stats">
             <div class="stat-card success">
                 <h3>Convertidos</h3>
@@ -600,7 +902,7 @@ class ConversorHEIC:
                 <div class="sub">{avg_seconds:.2f}s por imagem</div>
             </div>
         </div>
-        
+
         <div class="section">
             <h2>📊 Resumo</h2>
             <table>
@@ -618,7 +920,7 @@ class ConversorHEIC:
                 </tr>
             </table>
         </div>
-        
+
         <div class="section">
             <h2>🏆 Top 10 - Maior Economia</h2>
             <table>
@@ -628,7 +930,7 @@ class ConversorHEIC:
                     <th class="size">Depois</th>
                     <th class="size">Economia</th>
                 </tr>"""
-            
+
             for item in top_10:
                 safe_name = html.escape(str(item["file"]))
                 report_html += f"""
@@ -638,39 +940,57 @@ class ConversorHEIC:
                     <td class="size">{item['after']/1024:.1f} KB</td>
                     <td class="savings">-{item['saved']/1024:.1f} KB ({item['percent']:.1f}%)</td>
                 </tr>"""
-            
+
             report_html += f"""
             </table>
         </div>
-        
+
         <div class="footer">
-            <p><strong>Pasta de saída:</strong> {html.escape(str(output_folder))}</p>
+            <p><strong>Pasta(s) de origem ({len(resolved_source_folders)}):</strong></p>
+            <ul class="paths-list">{source_folders_html}</ul>
+            <p style="margin-top: 10px;"><strong>Pasta(s) de saída ({len(output_folders)}):</strong></p>
+            <ul class="paths-list">{output_folders_html}</ul>
+            <p><strong>Pasta de relatórios:</strong> {html.escape(str(report_folder))}</p>
             <p style="margin-top: 10px;">Gerado por BrJoy WebP Optimizer v1.1</p>
             <a href="https://github.com/ibrumatte/brjoy-webp-optimizer" class="export-btn">GitHub</a>
         </div>
     </div>
 </body>
 </html>"""
-            
-            # Salvar relatório
-            report_path = output_folder / "conversion-report.html"
+
+            report_path = report_folder / "conversion-report.html"
             with open(report_path, "w", encoding="utf-8") as f:
                 f.write(report_html)
-            
-            self._open_path(report_path)
-            
+
+            metadata = {
+                "generated_at": datetime.now().isoformat(timespec="seconds"),
+                "output_folder": str(output_folder),
+                "report_folder": str(report_folder),
+                "html_report": str(report_path),
+                "ai_report": str(Path(ai_paths.get("ai_report", ""))) if ai_paths else "",
+                "csv_report": str(Path(ai_paths.get("csv_report", ""))) if ai_paths else "",
+                "source_folders": resolved_source_folders,
+                "output_folders": output_folders,
+                "success": success,
+                "errors": errors,
+                "total": total,
+                "duration_seconds": round(duration, 2),
+                "formato": formato,
+            }
+            self._store_report_metadata(metadata)
+            return metadata
         except Exception as e:
             print(f"Failed to generate report: {e}")
+            return None
 
-    def _generate_ai_report(self, output_folder, details, formato):
-        """Gera relatório estruturado para IA fazer substituições no código"""
+    def _generate_ai_report(self, report_folder, details, formato):
+        """Gera relatório estruturado para IA fazer substituições no código."""
         try:
             if not details:
-                return
-            
-            first_file = str(details[0]["file"]).replace("\r", " ").replace("\n", " ")
-            
-            # Criar relatório TXT para IA
+                return None
+
+            first_original, first_converted = self._build_converted_report_path(details[0]["file"], formato)
+
             ai_report = f"""# BrJoy WebP Optimizer - AI Code Update Report
 # Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 # 
@@ -684,58 +1004,48 @@ class ConversorHEIC:
 # ============================================================
 
 """
-            
-            # Listar todas as conversões
+
             ai_report += "# LISTA DE SUBSTITUIÇÕES\n"
             ai_report += "# ----------------------\n\n"
-            
+
             for item in details:
-                original_name = str(item["file"]).replace("\r", " ").replace("\n", " ")
-                # Remover extensão original e adicionar nova
-                name_without_ext = Path(original_name).stem
-                new_name = f"{name_without_ext}.{formato}"
-                
+                original_name, new_name = self._build_converted_report_path(item["file"], formato)
                 ai_report += f"{original_name} → {new_name}\n"
-            
-            # Adicionar seção CSV
-            ai_report += f"\n\n# FORMATO CSV (para importar em planilhas)\n"
+
+            ai_report += "\n\n# FORMATO CSV (para importar em planilhas)\n"
             ai_report += "# ----------------------------------------\n\n"
             ai_report += "ANTES,DEPOIS,ECONOMIA_KB,ECONOMIA_PERCENT\n"
-            
+
             for item in details:
-                original_name = str(item["file"]).replace("\r", " ").replace("\n", " ")
-                name_without_ext = Path(original_name).stem
-                new_name = f"{name_without_ext}.{formato}"
+                original_name, new_name = self._build_converted_report_path(item["file"], formato)
                 saved_kb = item["saved"] / 1024
                 percent = item["percent"]
-                
                 ai_report += f"{original_name},{new_name},{saved_kb:.1f},{percent:.1f}\n"
-            
-            # Adicionar exemplos de uso
+
             ai_report += f"""
 
 # EXEMPLOS DE SUBSTITUIÇÃO NO CÓDIGO
 # -----------------------------------
 
 # HTML:
-# <img src="images/{first_file}" /> 
+# <img src="images/{first_original}" /> 
 # ↓
-# <img src="images/{Path(first_file).stem}.{formato}" />
+# <img src="images/{first_converted}" />
 
 # CSS:
-# background-image: url('images/{first_file}');
+# background-image: url('images/{first_original}');
 # ↓
-# background-image: url('images/{Path(first_file).stem}.{formato}');
+# background-image: url('images/{first_converted}');
 
 # JavaScript/React:
-# import hero from './images/{first_file}'
+# import hero from './images/{first_original}'
 # ↓
-# import hero from './images/{Path(first_file).stem}.{formato}'
+# import hero from './images/{first_converted}'
 
 # Markdown:
-# ![Alt text](images/{first_file})
+# ![Alt text](images/{first_original})
 # ↓
-# ![Alt text](images/{Path(first_file).stem}.{formato})
+# ![Alt text](images/{first_converted})
 
 # ============================================================
 # PROMPT SUGERIDO PARA IA:
@@ -747,26 +1057,22 @@ class ConversorHEIC:
 #
 # ============================================================
 """
-            
-            # Salvar relatório para IA
-            ai_report_path = output_folder / "AI-CODE-UPDATE.txt"
+
+            ai_report_path = report_folder / "AI-CODE-UPDATE.txt"
             with open(ai_report_path, "w", encoding="utf-8") as f:
                 f.write(ai_report)
-            
-            # Também salvar CSV puro
-            csv_path = output_folder / "conversions.csv"
+
+            csv_path = report_folder / "conversions.csv"
             with open(csv_path, "w", encoding="utf-8", newline="") as f:
                 writer = csv.writer(f)
                 writer.writerow(["ANTES", "DEPOIS", "TAMANHO_ANTES_KB", "TAMANHO_DEPOIS_KB", "ECONOMIA_KB", "ECONOMIA_PERCENT"])
                 for item in details:
-                    original_name = str(item["file"]).replace("\r", " ").replace("\n", " ")
-                    name_without_ext = Path(original_name).stem
-                    new_name = f"{name_without_ext}.{formato}"
+                    original_name, new_name = self._build_converted_report_path(item["file"], formato)
                     before_kb = item["before"] / 1024
                     after_kb = item["after"] / 1024
                     saved_kb = item["saved"] / 1024
                     percent = item["percent"]
-                    
+
                     writer.writerow([
                         self._safe_csv_cell(original_name),
                         self._safe_csv_cell(new_name),
@@ -775,12 +1081,16 @@ class ConversorHEIC:
                         f"{saved_kb:.1f}",
                         f"{percent:.1f}",
                     ])
-            
+
             print(f"✅ AI Report: {ai_report_path}")
             print(f"✅ CSV: {csv_path}")
-            
+            return {
+                "ai_report": str(ai_report_path),
+                "csv_report": str(csv_path),
+            }
         except Exception as e:
             print(f"Failed to generate AI report: {e}")
+            return None
 
     def _save_history(self, folder, success, errors, total):
         """Salva conversão no histórico"""
@@ -817,7 +1127,7 @@ class ConversorHEIC:
             text.config(state=tk.DISABLED)
             
             tk.Button(win, text="Clear History", command=lambda: self._clear_history(win),
-                     font=("Arial", 9), bg="#ef4444", fg="#ffffff",
+                     font=(FONT_UI, 9), bg="#ef4444", fg="#ffffff",
                      padx=16, pady=8, cursor="hand2", relief=tk.FLAT).pack(pady=(0, 16))
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load history: {e}")
@@ -881,46 +1191,211 @@ class ConversorHEIC:
 
     def _get_session_folder(self, arquivos_snapshot, config):
         """Resolve pasta base da sessão para histórico/relatórios."""
+        first_parent = Path(arquivos_snapshot[0]["path"]).parent
+
+        # In-place modes: salvar no diretório original de cada arquivo.
+        if config["substituir_no_lugar"] or config["manter_estrutura"]:
+            return first_parent
+
         if self.pasta_saida.get():
             pasta = Path(self.pasta_saida.get())
             pasta.mkdir(parents=True, exist_ok=True)
             return pasta
 
-        first_parent = Path(arquivos_snapshot[0]["path"]).parent
-        if config["substituir_no_lugar"]:
-            return first_parent
-
         return self.criar_pasta_sessao(pasta_origem=first_parent)
+
+    def open_reports_tab(self):
+        if hasattr(self, "main_tabs") and hasattr(self, "report_tab"):
+            self.main_tabs.select(self.report_tab)
+            self.refresh_reports_list()
+
+    def _build_report_tab(self):
+        container = tk.Frame(self.report_tab, bg=COLORS["bg"])
+        container.pack(fill=tk.BOTH, expand=True, padx=16, pady=12)
+
+        top_bar = tk.Frame(container, bg=COLORS["bg"])
+        top_bar.pack(fill=tk.X, pady=(0, 8))
+
+        tk.Label(top_bar, text="Relatórios", font=(FONT_UI, 11, "bold"),
+                bg=COLORS["bg"], fg=COLORS["text"]).pack(side=tk.LEFT)
+
+        tk.Button(top_bar, text="Atualizar", command=self.refresh_reports_list,
+                 font=(FONT_UI, 9), bg=COLORS["secondary"], fg=COLORS["text"],
+                 padx=10, pady=4, cursor="hand2", relief=tk.FLAT, bd=0).pack(side=tk.RIGHT)
+
+        tk.Button(top_bar, text="Abrir pasta", command=lambda: self._open_path(self.reports_dir),
+                 font=(FONT_UI, 9), bg=COLORS["secondary"], fg=COLORS["text"],
+                 padx=10, pady=4, cursor="hand2", relief=tk.FLAT, bd=0).pack(side=tk.RIGHT, padx=(0, 6))
+
+        self.report_status_label = tk.Label(
+            container,
+            text=f"Relatórios em {self.reports_dir}",
+            font=(FONT_UI, 9),
+            bg=COLORS["bg"],
+            fg=COLORS["text_secondary"],
+        )
+        self.report_status_label.pack(fill=tk.X, pady=(0, 8))
+
+        list_card = tk.Frame(container, bg=COLORS["card"], highlightthickness=1,
+                             highlightbackground=COLORS["border"], relief=tk.FLAT)
+        list_card.pack(fill=tk.BOTH, expand=True)
+
+        tree_wrap = tk.Frame(list_card, bg=COLORS["card"])
+        tree_wrap.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
+
+        columns = ("data", "pasta", "resumo")
+        self.reports_tree = ttk.Treeview(tree_wrap, columns=columns, show="headings", height=8, selectmode="browse")
+        self.reports_tree.heading("data", text="Data")
+        self.reports_tree.heading("pasta", text="Pasta")
+        self.reports_tree.heading("resumo", text="Resumo")
+        self.reports_tree.column("data", width=150, anchor=tk.W)
+        self.reports_tree.column("pasta", width=260, anchor=tk.W)
+        self.reports_tree.column("resumo", width=120, anchor=tk.W)
+        self.reports_tree.bind("<<TreeviewSelect>>", self._on_report_selected)
+
+        reports_scroll = ttk.Scrollbar(tree_wrap, orient=tk.VERTICAL, command=self.reports_tree.yview)
+        self.reports_tree.configure(yscrollcommand=reports_scroll.set)
+        self.reports_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        reports_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        actions = tk.Frame(list_card, bg=COLORS["card"])
+        actions.pack(fill=tk.X, padx=12, pady=(0, 10))
+
+        self.btn_open_report_html = tk.Button(
+            actions,
+            text="HTML",
+            command=lambda: self._open_selected_report_file("html"),
+            font=(FONT_UI, 9),
+            bg=COLORS["secondary"],
+            fg=COLORS["text"],
+            padx=10,
+            pady=4,
+            cursor="hand2",
+            relief=tk.FLAT,
+            bd=0,
+            state=tk.DISABLED,
+        )
+        self.btn_open_report_html.pack(side=tk.LEFT)
+
+        self.btn_open_report_ai = tk.Button(
+            actions,
+            text="AI TXT",
+            command=lambda: self._open_selected_report_file("ai"),
+            font=(FONT_UI, 9),
+            bg=COLORS["secondary"],
+            fg=COLORS["text"],
+            padx=10,
+            pady=4,
+            cursor="hand2",
+            relief=tk.FLAT,
+            bd=0,
+            state=tk.DISABLED,
+        )
+        self.btn_open_report_ai.pack(side=tk.LEFT, padx=(6, 0))
+
+        self.btn_open_report_csv = tk.Button(
+            actions,
+            text="CSV",
+            command=lambda: self._open_selected_report_file("csv"),
+            font=(FONT_UI, 9),
+            bg=COLORS["secondary"],
+            fg=COLORS["text"],
+            padx=10,
+            pady=4,
+            cursor="hand2",
+            relief=tk.FLAT,
+            bd=0,
+            state=tk.DISABLED,
+        )
+        self.btn_open_report_csv.pack(side=tk.LEFT, padx=(6, 0))
+
+        self.btn_open_report_folder = tk.Button(
+            actions,
+            text="Pasta da sessão",
+            command=lambda: self._open_selected_report_file("folder"),
+            font=(FONT_UI, 9),
+            bg=COLORS["secondary"],
+            fg=COLORS["text"],
+            padx=10,
+            pady=4,
+            cursor="hand2",
+            relief=tk.FLAT,
+            bd=0,
+            state=tk.DISABLED,
+        )
+        self.btn_open_report_folder.pack(side=tk.LEFT, padx=(6, 0))
+
+        preview_card = tk.Frame(container, bg=COLORS["card"], highlightthickness=1,
+                                highlightbackground=COLORS["border"], relief=tk.FLAT)
+        preview_card.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
+
+        tk.Label(preview_card, text="Preview (AI-CODE-UPDATE.txt)", font=(FONT_UI, 9, "bold"),
+                bg=COLORS["card"], fg=COLORS["text"]).pack(anchor=tk.W, padx=12, pady=(10, 6))
+
+        preview_wrap = tk.Frame(preview_card, bg=COLORS["card"])
+        preview_wrap.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 12))
+
+        self.report_preview = tk.Text(
+            preview_wrap,
+            font=("Courier", 9),
+            bg="#f8f8f8" if not self.dark_mode else COLORS["secondary"],
+            fg=COLORS["text"],
+            relief=tk.FLAT,
+            padx=10,
+            pady=10,
+            wrap=tk.WORD,
+            state=tk.DISABLED,
+            height=10,
+        )
+        preview_scroll = ttk.Scrollbar(preview_wrap, orient=tk.VERTICAL, command=self.report_preview.yview)
+        self.report_preview.configure(yscrollcommand=preview_scroll.set)
+        self.report_preview.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        preview_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
     def criar_interface(self):
         # Header compacto
-        header = tk.Frame(self.root, bg="#ffffff", height=60)
+        header = tk.Frame(self.root, bg=COLORS["card"], height=60)
         header.pack(fill=tk.X)
         header.pack_propagate(False)
+        tk.Frame(self.root, bg=COLORS["border"], height=1).pack(fill=tk.X)
 
-        header_inner = tk.Frame(header, bg="#ffffff")
+        header_inner = tk.Frame(header, bg=COLORS["card"])
         header_inner.pack(fill=tk.X, padx=16, pady=12)
 
         tk.Label(header_inner, text="🖼️ BrJoy Converter",
-                font=("Arial", 14, "bold"), bg="#ffffff", fg=COLORS["text"]).pack(side=tk.LEFT)
+                font=(FONT_UI, 14, "bold"), bg=COLORS["card"], fg=COLORS["text"]).pack(side=tk.LEFT)
 
         tk.Label(header_inner, text="Converta imagens para WebP/PNG em lote",
-                font=("Arial", 9), bg="#ffffff", fg=COLORS["text_secondary"]).pack(side=tk.LEFT, padx=(12, 0))
+                font=(FONT_UI, 9), bg=COLORS["card"], fg=COLORS["text_secondary"]).pack(side=tk.LEFT, padx=(12, 0))
 
         # Dark mode toggle
         self.btn_dark = tk.Button(header_inner, text="🌙", command=self.toggle_dark_mode,
-                                  font=("Arial", 14), bg="#ffffff", fg=COLORS["text"],
+                                  font=(FONT_UI, 14), bg=COLORS["card"], fg=COLORS["text"],
                                   cursor="hand2", relief=tk.FLAT, bd=0, padx=8)
         self.btn_dark.pack(side=tk.RIGHT)
         
         # History button
         self.btn_history = tk.Button(header_inner, text="📜", command=self.show_history,
-                                     font=("Arial", 14), bg="#ffffff", fg=COLORS["text"],
+                                     font=(FONT_UI, 14), bg=COLORS["card"], fg=COLORS["text"],
                                      cursor="hand2", relief=tk.FLAT, bd=0, padx=8)
         self.btn_history.pack(side=tk.RIGHT)
 
+        # Reports tab shortcut
+        self.btn_reports = tk.Button(header_inner, text="📊", command=self.open_reports_tab,
+                                     font=(FONT_UI, 14), bg=COLORS["card"], fg=COLORS["text"],
+                                     cursor="hand2", relief=tk.FLAT, bd=0, padx=8)
+        self.btn_reports.pack(side=tk.RIGHT)
+
+        self.main_tabs = ttk.Notebook(self.root)
+        self.main_tabs.pack(fill=tk.BOTH, expand=True)
+
+        self.converter_tab = tk.Frame(self.main_tabs, bg=COLORS["bg"])
+        self.report_tab = tk.Frame(self.main_tabs, bg=COLORS["bg"])
+        self.main_tabs.add(self.converter_tab, text="Conversor")
+        self.main_tabs.add(self.report_tab, text="Report")
+
         # Corpo: 2 colunas
-        body = tk.Frame(self.root, bg=COLORS["bg"])
+        body = tk.Frame(self.converter_tab, bg=COLORS["bg"])
         body.pack(fill=tk.BOTH, expand=True, padx=16, pady=12)
 
         # Coluna esquerda: Arquivos
@@ -934,7 +1409,7 @@ class ConversorHEIC:
         files_header = tk.Frame(files_card, bg=COLORS["card"])
         files_header.pack(fill=tk.X, padx=16, pady=(12, 8))
 
-        tk.Label(files_header, text="Arquivos", font=("Arial", 10, "bold"),
+        tk.Label(files_header, text="Arquivos", font=(FONT_UI, 10, "bold"),
                 bg=COLORS["card"], fg=COLORS["text"]).pack(side=tk.LEFT)
 
         actions_frame = tk.Frame(files_header, bg=COLORS["card"])
@@ -942,25 +1417,25 @@ class ConversorHEIC:
 
         self.btn_preview = tk.Button(actions_frame, text="👁️",
                                      command=self.show_preview,
-                                     font=("Arial", 11), bg=COLORS["secondary"], fg=COLORS["text"],
+                                     font=(FONT_UI, 11), bg=COLORS["secondary"], fg=COLORS["text"],
                                      padx=8, pady=2, cursor="hand2", relief=tk.FLAT, bd=0)
         self.btn_preview.pack(side=tk.LEFT, padx=(0, 4))
 
         self.btn_adicionar = tk.Button(actions_frame, text="📂 Escanear Pasta",
                                        command=self.escanear_pasta,
-                                       font=("Arial", 9), bg=COLORS["secondary"], fg=COLORS["text"],
+                                       font=(FONT_UI, 9), bg=COLORS["secondary"], fg=COLORS["text"],
                                        padx=12, pady=4, cursor="hand2", relief=tk.FLAT, bd=0)
         self.btn_adicionar.pack(side=tk.LEFT, padx=(0, 6))
 
         self.btn_limpar = tk.Button(actions_frame, text="Limpar",
                                     command=self.limpar_arquivos,
-                                    font=("Arial", 9), bg=COLORS["secondary"], fg=COLORS["text"],
+                                    font=(FONT_UI, 9), bg=COLORS["secondary"], fg=COLORS["text"],
                                     padx=12, pady=4, cursor="hand2", relief=tk.FLAT, bd=0,
                                     state=tk.DISABLED)
         self.btn_limpar.pack(side=tk.LEFT)
 
         # Lista de arquivos
-        list_container = tk.Frame(files_card, bg="#f8f8f8")
+        list_container = tk.Frame(files_card, bg=COLORS["secondary"])
         list_container.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 12))
 
         columns = ("nome", "tamanho", "status")
@@ -986,48 +1461,88 @@ class ConversorHEIC:
         # Empty state
         self.empty_label = tk.Label(list_container,
                                     text="Arraste e solte imagens aqui\nou clique em Adicionar (Ctrl+O)",
-                                    font=("Arial", 10), bg="#f8f8f8", fg=COLORS["text_muted"])
+                                    font=(FONT_UI, 10), bg=COLORS["secondary"], fg=COLORS["text_muted"])
 
         # Coluna direita: Configurações
-        right_col = tk.Frame(body, bg=COLORS["bg"], width=220)
+        right_col = tk.Frame(body, bg=COLORS["bg"], width=300)
         right_col.pack(side=tk.RIGHT, fill=tk.Y)
         right_col.pack_propagate(False)
 
-        config_card = tk.Frame(right_col, bg=COLORS["card"], highlightthickness=1,
-                              highlightbackground=COLORS["border"], relief=tk.FLAT)
-        config_card.pack(fill=tk.BOTH, expand=True)
+        config_wrapper = tk.Frame(right_col, bg=COLORS["card"], highlightthickness=1,
+                                  highlightbackground=COLORS["border"], relief=tk.FLAT)
+        config_wrapper.pack(fill=tk.BOTH, expand=True)
+
+        config_canvas = tk.Canvas(config_wrapper, bg=COLORS["card"], highlightthickness=0, bd=0)
+        config_scroll = ttk.Scrollbar(config_wrapper, orient=tk.VERTICAL, command=config_canvas.yview)
+        config_canvas.configure(yscrollcommand=config_scroll.set)
+        config_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        config_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        config_card = tk.Frame(config_canvas, bg=COLORS["card"])
+        config_window = config_canvas.create_window((0, 0), window=config_card, anchor="nw")
+
+        def _sync_config_scrollregion(event):
+            config_canvas.configure(scrollregion=config_canvas.bbox("all"))
+
+        def _sync_config_width(event):
+            config_canvas.itemconfigure(config_window, width=event.width)
+
+        def _on_config_mousewheel(event):
+            if event.delta:
+                config_canvas.yview_scroll(int(-event.delta / 120), "units")
+            elif event.num == 4:
+                config_canvas.yview_scroll(-1, "units")
+            elif event.num == 5:
+                config_canvas.yview_scroll(1, "units")
+
+        def _bind_config_scroll(_event):
+            config_canvas.bind_all("<MouseWheel>", _on_config_mousewheel)
+            config_canvas.bind_all("<Button-4>", _on_config_mousewheel)
+            config_canvas.bind_all("<Button-5>", _on_config_mousewheel)
+
+        def _unbind_config_scroll(_event):
+            config_canvas.unbind_all("<MouseWheel>")
+            config_canvas.unbind_all("<Button-4>")
+            config_canvas.unbind_all("<Button-5>")
+
+        config_card.bind("<Configure>", _sync_config_scrollregion)
+        config_canvas.bind("<Configure>", _sync_config_width)
+        config_canvas.bind("<Enter>", _bind_config_scroll)
+        config_canvas.bind("<Leave>", _unbind_config_scroll)
+        config_card.bind("<Enter>", _bind_config_scroll)
+        config_card.bind("<Leave>", _unbind_config_scroll)
 
         config_inner = tk.Frame(config_card, bg=COLORS["card"])
         config_inner.pack(fill=tk.BOTH, padx=16, pady=12)
 
-        tk.Label(config_inner, text="Configurações", font=("Arial", 10, "bold"),
+        tk.Label(config_inner, text="Configurações", font=(FONT_UI, 10, "bold"),
                 bg=COLORS["card"], fg=COLORS["text"]).pack(anchor=tk.W, pady=(0, 12))
 
         # Presets
-        tk.Label(config_inner, text="Presets", font=("Arial", 9, "bold"),
+        tk.Label(config_inner, text="Presets", font=(FONT_UI, 9, "bold"),
                 bg=COLORS["card"], fg=COLORS["text_secondary"]).pack(anchor=tk.W, pady=(0, 6))
 
         self.preset_var = tk.StringVar(value="")
         self.preset_combo = ttk.Combobox(config_inner, textvariable=self.preset_var,
                                         values=[""] + list(PRESETS.keys()),
-                                        state="readonly", font=("Arial", 9), width=18)
+                                        state="readonly", font=(FONT_UI, 9), width=18)
         self.preset_combo.pack(anchor=tk.W, pady=(0, 12))
         self.preset_combo.bind("<<ComboboxSelected>>", self.aplicar_preset)
 
         tk.Frame(config_inner, bg=COLORS["border"], height=1).pack(fill=tk.X, pady=(0, 12))
 
         # Formato
-        tk.Label(config_inner, text="Formato", font=("Arial", 9, "bold"),
+        tk.Label(config_inner, text="Formato", font=(FONT_UI, 9, "bold"),
                 bg=COLORS["card"], fg=COLORS["text_secondary"]).pack(anchor=tk.W, pady=(0, 6))
 
         self.radio_webp = tk.Radiobutton(config_inner, text="WebP", variable=self.formato, value="webp",
-                                        font=("Arial", 9), bg=COLORS["card"], fg=COLORS["text"],
+                                        font=(FONT_UI, 9), bg=COLORS["card"], fg=COLORS["text"],
                                         selectcolor=COLORS["card"], activebackground=COLORS["card"],
                                         highlightthickness=0)
         self.radio_webp.pack(anchor=tk.W, pady=2)
 
         self.radio_png = tk.Radiobutton(config_inner, text="PNG", variable=self.formato, value="png",
-                                       font=("Arial", 9), bg=COLORS["card"], fg=COLORS["text"],
+                                       font=(FONT_UI, 9), bg=COLORS["card"], fg=COLORS["text"],
                                        selectcolor=COLORS["card"], activebackground=COLORS["card"],
                                        highlightthickness=0)
         self.radio_png.pack(anchor=tk.W, pady=2)
@@ -1041,7 +1556,7 @@ class ConversorHEIC:
             text="Batch Multiple Sizes",
             variable=self.batch_sizes_var,
             command=self.toggle_batch_sizes,
-            font=("Arial", 9, "bold"),
+            font=(FONT_UI, 9, "bold"),
             bg=COLORS["card"],
             fg=COLORS["text"],
             selectcolor=COLORS["card"],
@@ -1053,10 +1568,10 @@ class ConversorHEIC:
         self.batch_frame = tk.Frame(config_inner, bg=COLORS["card"])
         self.batch_frame.pack(anchor=tk.W, padx=(20, 0), pady=(0, 12))
         
-        tk.Label(self.batch_frame, text="Sizes (e.g. 800,1200,1920):", font=("Arial", 8),
+        tk.Label(self.batch_frame, text="Sizes (e.g. 800,1200,1920):", font=(FONT_UI, 8),
                 bg=COLORS["card"], fg=COLORS["text_secondary"]).pack(anchor=tk.W)
         
-        self.batch_sizes_entry = tk.Entry(self.batch_frame, font=("Arial", 9),
+        self.batch_sizes_entry = tk.Entry(self.batch_frame, font=(FONT_UI, 9),
                                           bg=COLORS["secondary"], fg=COLORS["text"],
                                           relief=tk.FLAT, bd=0, width=18, state=tk.DISABLED)
         self.batch_sizes_entry.pack(anchor=tk.W, pady=(4, 0))
@@ -1065,13 +1580,13 @@ class ConversorHEIC:
         tk.Frame(config_inner, bg=COLORS["border"], height=1).pack(fill=tk.X, pady=12)
 
         # Qualidade
-        tk.Label(config_inner, text="Qualidade", font=("Arial", 9, "bold"),
+        tk.Label(config_inner, text="Qualidade", font=(FONT_UI, 9, "bold"),
                 bg=COLORS["card"], fg=COLORS["text_secondary"]).pack(anchor=tk.W, pady=(0, 6))
 
         quality_frame = tk.Frame(config_inner, bg=COLORS["card"])
         quality_frame.pack(fill=tk.X, pady=(0, 12))
 
-        self.quality_label = tk.Label(quality_frame, text="85%", font=("Arial", 9),
+        self.quality_label = tk.Label(quality_frame, text="85%", font=(FONT_UI, 9),
                                       bg=COLORS["card"], fg=COLORS["text"])
         self.quality_label.pack(side=tk.RIGHT)
 
@@ -1086,7 +1601,7 @@ class ConversorHEIC:
         # Recorte 1:1
         self.check_recorte = tk.Checkbutton(config_inner, text="Recorte 1:1",
                                            variable=self.recorte_1x1,
-                                           font=("Arial", 9), bg=COLORS["card"], fg=COLORS["text"],
+                                           font=(FONT_UI, 9), bg=COLORS["card"], fg=COLORS["text"],
                                            selectcolor=COLORS["card"], activebackground=COLORS["card"],
                                            highlightthickness=0)
         self.check_recorte.pack(anchor=tk.W, pady=(0, 8))
@@ -1094,7 +1609,7 @@ class ConversorHEIC:
         # Redimensionar
         self.check_resize = tk.Checkbutton(config_inner, text="Redimensionar",
                                           variable=self.redimensionar, command=self.toggle_resize,
-                                          font=("Arial", 9), bg=COLORS["card"], fg=COLORS["text"],
+                                          font=(FONT_UI, 9), bg=COLORS["card"], fg=COLORS["text"],
                                           selectcolor=COLORS["card"], activebackground=COLORS["card"],
                                           highlightthickness=0)
         self.check_resize.pack(anchor=tk.W, pady=(0, 6))
@@ -1105,12 +1620,12 @@ class ConversorHEIC:
         # Validação de entrada numérica
         vcmd = (self.root.register(self._validate_number), '%P')
         self.largura_entry = tk.Entry(resize_input, textvariable=self.largura_max,
-                                      font=("Arial", 9), bg=COLORS["secondary"], fg=COLORS["text"],
+                                      font=(FONT_UI, 9), bg=COLORS["secondary"], fg=COLORS["text"],
                                       relief=tk.FLAT, bd=0, width=8, state=tk.DISABLED,
                                       validate='key', validatecommand=vcmd)
         self.largura_entry.pack(side=tk.LEFT, padx=(0, 4))
 
-        tk.Label(resize_input, text="px", font=("Arial", 9),
+        tk.Label(resize_input, text="px", font=(FONT_UI, 9),
                 bg=COLORS["card"], fg=COLORS["text_secondary"]).pack(side=tk.LEFT)
 
         tk.Frame(config_inner, bg=COLORS["border"], height=1).pack(fill=tk.X, pady=12)
@@ -1120,7 +1635,8 @@ class ConversorHEIC:
             config_inner,
             text="Manter estrutura de pastas",
             variable=self.manter_estrutura,
-            font=("Arial", 9),
+            command=self.atualizar_estado,
+            font=(FONT_UI, 9),
             bg=COLORS["card"],
             fg=COLORS["text"],
             selectcolor=COLORS["card"],
@@ -1130,32 +1646,33 @@ class ConversorHEIC:
         self.check_estrutura.pack(anchor=tk.W, pady=(0, 8))
 
         # Opção: Substituir no lugar
-        self.check_substituir = tk.Checkbutton(config_inner, text="Substituir arquivos originais (⚠️ sem backup)",
+        self.check_substituir = tk.Checkbutton(config_inner, text="Substituir no lugar (sem backup)",
                                                variable=self.substituir_no_lugar,
                                                command=self.on_toggle_replace_in_place,
-                                               font=("Arial", 9), bg=COLORS["card"], fg="#ef4444",
+                                               font=(FONT_UI, 9), bg=COLORS["card"], fg="#ef4444",
                                                selectcolor=COLORS["card"], activebackground=COLORS["card"],
+                                               justify=tk.LEFT, anchor="w", wraplength=230,
                                                highlightthickness=0)
         self.check_substituir.pack(anchor=tk.W, pady=(0, 12))
 
         tk.Frame(config_inner, bg=COLORS["border"], height=1).pack(fill=tk.X, pady=12)
 
         # Filtros avançados
-        tk.Label(config_inner, text="Filters", font=("Arial", 9, "bold"),
+        tk.Label(config_inner, text="Filters", font=(FONT_UI, 9, "bold"),
                 bg=COLORS["card"], fg=COLORS["text_secondary"]).pack(anchor=tk.W, pady=(0, 6))
 
         self.sharpen_var = tk.BooleanVar(value=False)
         tk.Checkbutton(config_inner, text="Sharpen", variable=self.sharpen_var,
-                      font=("Arial", 9), bg=COLORS["card"], fg=COLORS["text"],
+                      font=(FONT_UI, 9), bg=COLORS["card"], fg=COLORS["text"],
                       selectcolor=COLORS["card"], activebackground=COLORS["card"],
                       highlightthickness=0).pack(anchor=tk.W, pady=2)
 
         self.brightness_var = tk.IntVar(value=100)
         brightness_frame = tk.Frame(config_inner, bg=COLORS["card"])
         brightness_frame.pack(fill=tk.X, pady=4)
-        tk.Label(brightness_frame, text="Brightness", font=("Arial", 9),
+        tk.Label(brightness_frame, text="Brightness", font=(FONT_UI, 9),
                 bg=COLORS["card"], fg=COLORS["text"]).pack(side=tk.LEFT)
-        self.brightness_label = tk.Label(brightness_frame, text="100%", font=("Arial", 9),
+        self.brightness_label = tk.Label(brightness_frame, text="100%", font=(FONT_UI, 9),
                                          bg=COLORS["card"], fg=COLORS["text"], width=5)
         self.brightness_label.pack(side=tk.RIGHT)
         tk.Scale(brightness_frame, from_=50, to=150, orient=tk.HORIZONTAL,
@@ -1164,70 +1681,74 @@ class ConversorHEIC:
                 command=lambda v: self.brightness_label.config(text=f"{int(float(v))}%")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
 
         # Rodapé fixo
-        footer = tk.Frame(self.root, bg="#ffffff", height=100)
+        footer = tk.Frame(self.converter_tab, bg=COLORS["card"], height=100)
         footer.pack(fill=tk.X, side=tk.BOTTOM)
         footer.pack_propagate(False)
+        tk.Frame(self.converter_tab, bg=COLORS["border"], height=1).pack(fill=tk.X, side=tk.BOTTOM)
 
-        footer_inner = tk.Frame(footer, bg="#ffffff")
+        footer_inner = tk.Frame(footer, bg=COLORS["card"])
         footer_inner.pack(fill=tk.BOTH, padx=16, pady=12)
 
         # Pasta de saída
-        output_frame = tk.Frame(footer_inner, bg="#ffffff")
+        output_frame = tk.Frame(footer_inner, bg=COLORS["card"])
         output_frame.pack(fill=tk.X, pady=(0, 8))
 
-        tk.Label(output_frame, text="Pasta de saída:", font=("Arial", 9),
-                bg="#ffffff", fg=COLORS["text_secondary"]).pack(side=tk.LEFT, padx=(0, 8))
+        tk.Label(output_frame, text="Pasta de saída:", font=(FONT_UI, 9),
+                bg=COLORS["card"], fg=COLORS["text_secondary"]).pack(side=tk.LEFT, padx=(0, 8))
 
         self.pasta_entry = tk.Entry(output_frame, textvariable=self.pasta_saida,
-                                    font=("Arial", 9), bg=COLORS["secondary"], fg=COLORS["text"],
+                                    font=(FONT_UI, 9), bg=COLORS["secondary"], fg=COLORS["text"],
                                     relief=tk.FLAT, bd=0, state="readonly")
         self.pasta_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
 
         self.btn_pasta = tk.Button(output_frame, text="Escolher", command=self.escolher_pasta,
-                                   font=("Arial", 9), bg=COLORS["secondary"], fg=COLORS["text"],
+                                   font=(FONT_UI, 9), bg=COLORS["secondary"], fg=COLORS["text"],
                                    padx=12, pady=4, cursor="hand2", relief=tk.FLAT, bd=0)
         self.btn_pasta.pack(side=tk.LEFT)
 
         # Progresso com percentual
-        progress_container = tk.Frame(footer_inner, bg="#ffffff")
+        progress_container = tk.Frame(footer_inner, bg=COLORS["card"])
         progress_container.pack(fill=tk.X, pady=(0, 6))
         
         self.progress_bar = ttk.Progressbar(progress_container, mode="determinate")
         self.progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
         
-        self.progress_label = tk.Label(progress_container, text="0%", font=("Arial", 9, "bold"),
-                                       bg="#ffffff", fg=COLORS["primary"], width=5)
+        self.progress_label = tk.Label(progress_container, text="0%", font=(FONT_UI, 9, "bold"),
+                                       bg=COLORS["card"], fg=COLORS["primary"], width=5)
         self.progress_label.pack(side=tk.LEFT)
 
         # Status + Botões
-        bottom_row = tk.Frame(footer_inner, bg="#ffffff")
+        bottom_row = tk.Frame(footer_inner, bg=COLORS["card"])
         bottom_row.pack(fill=tk.X)
 
         # Status com spinner
-        status_container = tk.Frame(bottom_row, bg="#ffffff")
+        status_container = tk.Frame(bottom_row, bg=COLORS["card"])
         status_container.pack(side=tk.LEFT)
         
-        self.spinner_label = tk.Label(status_container, text="", font=("Arial", 11),
-                                      bg="#ffffff", fg=COLORS["primary"])
+        self.spinner_label = tk.Label(status_container, text="", font=(FONT_UI, 11),
+                                      bg=COLORS["card"], fg=COLORS["primary"])
         self.spinner_label.pack(side=tk.LEFT, padx=(0, 4))
         
         self.status_label = tk.Label(status_container, text="Nenhum arquivo selecionado",
-                                     font=("Arial", 9), bg="#ffffff", fg=COLORS["text_secondary"])
+                                     font=(FONT_UI, 9), bg=COLORS["card"], fg=COLORS["text_secondary"])
         self.status_label.pack(side=tk.LEFT)
 
         # Botão Cancel (inicialmente oculto)
         self.btn_cancel = tk.Button(bottom_row, text="⏸ Cancel",
                                     command=self.cancelar_conversao,
-                                    font=("Arial", 9), bg="#ef4444", fg="#ffffff",
+                                    font=(FONT_UI, 9), bg="#ef4444", fg="#ffffff",
                                     padx=16, pady=8, cursor="hand2", relief=tk.FLAT, bd=0)
         
         self.btn_converter = tk.Button(bottom_row, text="✨ Converter (0)",
                                        command=self.converter,
-                                       font=("Arial", 10, "bold"), bg=COLORS["secondary"],
+                                       font=(FONT_UI, 10, "bold"), bg=COLORS["secondary"],
                                        fg=COLORS["text_muted"],
                                        padx=24, pady=8, cursor="hand2", relief=tk.FLAT, bd=0,
                                        state=tk.DISABLED)
         self.btn_converter.pack(side=tk.RIGHT)
+
+        self._build_report_tab()
+        self.refresh_reports_list()
 
     def escolher_pasta(self):
         pasta = filedialog.askdirectory(title="Escolher pasta de saída")
@@ -1400,16 +1921,9 @@ class ConversorHEIC:
     def _resolve_output_folder(self, arquivo_info, pasta_final, config):
         arquivo_path = Path(arquivo_info["path"])
 
-        if config["substituir_no_lugar"]:
+        # In-place modes: cada arquivo sai ao lado do original.
+        if config["substituir_no_lugar"] or config["manter_estrutura"]:
             return arquivo_path.parent
-
-        if config["manter_estrutura"]:
-            rel_path = Path(arquivo_info.get("rel_path", arquivo_path.name))
-            rel_parent = rel_path.parent
-            if str(rel_parent) != ".":
-                destino = pasta_final / rel_parent
-                destino.mkdir(parents=True, exist_ok=True)
-                return destino
 
         return pasta_final
 
@@ -1459,6 +1973,7 @@ class ConversorHEIC:
         """Conversão paralela usando ThreadPoolExecutor"""
         formato = config["formato"]
         total = len(arquivos_snapshot)
+        source_folders = sorted({str(Path(arq["path"]).parent) for arq in arquivos_snapshot})
         sucesso = erro = 0
         skipped = 0
         completed = 0
@@ -1470,11 +1985,11 @@ class ConversorHEIC:
         # Função para converter uma única imagem
         def convert_single(idx, arquivo):
             # Checar se foi cancelado
-            if self.cancel_requested:
-                file_label = arquivo.get("rel_path", Path(arquivo["path"]).name)
-                return (idx, file_label, "⏸", None, 0, 0)
-            
             arquivo_path = Path(arquivo["path"])
+            if self.cancel_requested:
+                file_label = arquivo.get("rel_path", arquivo_path.name)
+                return (idx, file_label, "⏸", None, 0, 0, str(arquivo_path), [])
+            
             file_label = arquivo.get("rel_path", arquivo_path.name)
             size_before = arquivo.get("size", arquivo_path.stat().st_size)
             
@@ -1486,43 +2001,45 @@ class ConversorHEIC:
                 if config["batch_sizes_enabled"]:
                     sizes = config["batch_sizes"]
                     if not sizes:
-                        return (idx, file_label, "✗", "Batch sizes invalid", 0, 0)
+                        return (idx, file_label, "✗", "Batch sizes invalid", 0, 0, str(arquivo_path), [])
                     
                     total_size_after = 0
+                    output_paths = []
                     for size in sizes:
                         if self.cancel_requested:
-                            return (idx, file_label, "⏸", None, size_before, 0)
+                            return (idx, file_label, "⏸", None, size_before, 0, str(arquivo_path), output_paths)
                         base_saida = pasta_saida / f"{arquivo_path.stem}_{size}w.{formato}"
                         saida = self._reserve_output_path(base_saida, reserved_paths, reserve_lock)
                         cmd = self._build_convert_cmd(arquivo_path, config, width=size)
                         cmd.append(str(saida))
                         subprocess.run(cmd, check=True, capture_output=True, text=True)
                         total_size_after += saida.stat().st_size
+                        output_paths.append(str(saida))
                     
-                    return (idx, file_label, "✓", None, size_before, total_size_after)
+                    return (idx, file_label, "✓", None, size_before, total_size_after, str(arquivo_path), output_paths)
                 else:
                     # Single conversion
                     if self.cancel_requested:
-                        return (idx, file_label, "⏸", None, size_before, 0)
+                        return (idx, file_label, "⏸", None, size_before, 0, str(arquivo_path), [])
                     base_saida = pasta_saida / f"{arquivo_path.stem}.{formato}"
                     saida = self._reserve_output_path(base_saida, reserved_paths, reserve_lock)
                     cmd = self._build_convert_cmd(arquivo_path, config)
                     cmd.append(str(saida))
                     subprocess.run(cmd, check=True, capture_output=True, text=True)
                     size_after = saida.stat().st_size
-                    return (idx, file_label, "✓", None, size_before, size_after)
+                    return (idx, file_label, "✓", None, size_before, size_after, str(arquivo_path), [str(saida)])
             except subprocess.CalledProcessError as e:
                 error_msg = e.stderr.strip() if e.stderr else str(e)
                 if "not recognized" in error_msg or "command not found" in error_msg:
-                    return (idx, file_label, "✗", "ImageMagick not installed", 0, 0)
+                    return (idx, file_label, "✗", "ImageMagick not installed", 0, 0, str(arquivo_path), [])
                 elif "unable to open" in error_msg.lower():
-                    return (idx, file_label, "✗", "Cannot read file", 0, 0)
+                    return (idx, file_label, "✗", "Cannot read file", 0, 0, str(arquivo_path), [])
                 elif "memory" in error_msg.lower():
-                    return (idx, file_label, "✗", "Out of memory", 0, 0)
+                    return (idx, file_label, "✗", "Out of memory", 0, 0, str(arquivo_path), [])
                 else:
-                    return (idx, file_label, "✗", f"Convert failed: {error_msg[:50]}", 0, 0)
+                    return (idx, file_label, "✗", f"Convert failed: {error_msg[:50]}", 0, 0, str(arquivo_path), [])
             except Exception as e:
-                return (idx, file_label, "✗", f"Error: {str(e)[:50]}", 0, 0)
+                return (idx, file_label, "✗", f"Error: {str(e)[:50]}", 0, 0, str(arquivo_path), [])
 
         # Processar em paralelo
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -1535,7 +2052,7 @@ class ConversorHEIC:
                     break
 
                 try:
-                    idx, nome, status, error, size_before, size_after = future.result()
+                    idx, nome, status, error, size_before, size_after, source_path, output_paths = future.result()
                 except Exception as e:
                     idx = futures[future]
                     ref = arquivos_snapshot[idx]
@@ -1544,6 +2061,8 @@ class ConversorHEIC:
                     error = f"Internal worker error: {str(e)[:80]}"
                     size_before = ref.get("size", 0)
                     size_after = 0
+                    source_path = ref.get("path", "")
+                    output_paths = []
 
                 completed += 1
                 
@@ -1551,6 +2070,8 @@ class ConversorHEIC:
                 if status == "✓":
                     conversion_details.append({
                         "file": nome,
+                        "source_path": source_path,
+                        "output_paths": output_paths,
                         "before": size_before,
                         "after": size_after,
                         "saved": size_before - size_after,
@@ -1578,7 +2099,18 @@ class ConversorHEIC:
         # Salvar no histórico
         if sucesso > 0:
             self._save_history(pasta_final, sucesso, erro, total)
-            self._generate_report(pasta_final, conversion_details, duration, sucesso, erro, total, formato)
+            report_metadata = self._generate_report(
+                pasta_final,
+                conversion_details,
+                duration,
+                sucesso,
+                erro,
+                total,
+                formato,
+                source_folders=source_folders,
+            )
+            if report_metadata:
+                self.root.after(0, lambda data=report_metadata: self._on_reports_generated(data))
 
         canceled = self.cancel_requested
         self.root.after(
@@ -1587,12 +2119,32 @@ class ConversorHEIC:
         )
 
 
-if __name__ == "__main__":
-    if DND_AVAILABLE:
-        root = TkinterDnD.Tk()
-    else:
-        root = tk.Tk()
+def run_legacy_tk():
+    try:
+        if DND_AVAILABLE:
+            root = TkinterDnD.Tk()
+        else:
+            root = tk.Tk()
+    except tk.TclError as exc:
+        raise RuntimeError(
+            "Unable to open graphical interface. Check DISPLAY/X11/Wayland configuration."
+        ) from exc
 
     root.tk.call("wm", "attributes", ".", "-type", "normal")
-    app = ConversorHEIC(root)
+    ConversorHEIC(root)
     root.mainloop()
+
+
+if __name__ == "__main__":
+    try:
+        from app.desktop.window import run_desktop_app
+
+        run_desktop_app()
+    except Exception as exc:
+        print(f"[BrJoy] Web UI unavailable: {exc}")
+        print("[BrJoy] Falling back to legacy Tk UI.")
+        try:
+            run_legacy_tk()
+        except Exception as fallback_exc:
+            print(f"[BrJoy] Legacy Tk UI unavailable: {fallback_exc}")
+            sys.exit(1)

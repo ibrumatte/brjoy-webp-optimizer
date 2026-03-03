@@ -1,171 +1,106 @@
 # BrJoy WebP Optimizer
 
-[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/ibrumatte/brjoy-webp-optimizer/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-blue.svg)](https://github.com/ibrumatte/brjoy-webp-optimizer/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
 [![Tests](https://github.com/ibrumatte/brjoy-webp-optimizer/actions/workflows/test.yml/badge.svg)](https://github.com/ibrumatte/brjoy-webp-optimizer/actions/workflows/test.yml)
 
-⚡ **4x faster** desktop pipeline to optimize images for web. Batch convert JPG/PNG to WebP with parallel processing, dark mode, preview, and **AI-powered code updates**.
+Desktop image optimizer with a modern 2026 UI (`pywebview + React/Tailwind`) and a Python conversion engine.
 
-## 🎯 Who Is This For
+Release atual: **v1.4.0 (2026-03-03)**.
 
-- Frontend developers (Next.js, Astro, Hugo, Vite)
-- Web agencies optimizing client sites
-- Freelancers reducing hosting costs
-- Teams improving Core Web Vitals
-- **Developers using AI coding assistants**
+## Destaques da V1.4.0
 
-## ✨ Features V1.3.0
+- Filtro de extensões no scan (`png,jpg,webp` etc.) aplicado em scan de pasta e ingestão por seleção.
+- Reprocessamento de falhas por item (`Reprocessar Erros`) no fim da conversão.
+- Política de conflito de nome na saída:
+  - `Versionar`
+  - `Sobrescrever`
+  - `Pular`
+- Backup automático ao usar `Substituir no lugar`:
+  - arquivo `.bak`
+  - pasta `_backup`
+- Aba de reports com ação `Copiar texto` do preview IA.
+- Densidade fixa em `Compacto` por padrão.
 
-### 🛡️ NEW: Reliability Hardening
-- **Thread-Safe Conversion Pipeline**: UI updates are synchronized safely during parallel conversion
-- **Skip-Aware Cancellation**: Canceled jobs are tracked as `skipped`, not failures
-- **Output Collision Protection**: Auto-suffix prevents overwriting generated files
-- **Cross-Platform Folder Open**: Works on Linux, macOS, and Windows
-- **Batch Resize Guaranteed**: Batch widths always enforce resize
+## Arquitetura (Desktop WebView)
 
-### 🔄 NEW: Replace in Place
-- **Preserve Structure**: Convert images in their original folders
-- **No Broken Paths**: Maintains directory structure automatically
-- **Perfect for Projects**: Update existing codebases without moving files
-- **Safe Warning**: Red indicator alerts about no automatic backup
+- `app/core`: motor de conversão e regras de saída.
+- `app/services`: scan, report, history e settings.
+- `app/bridge`: `DesktopAPI` para comunicação Python ↔ UI.
+- `app/desktop`: bootstrap da janela `pywebview`.
+- `frontend`: fonte React + Vite + Tailwind.
+- `frontend/dist`: bundle estático usado em runtime.
 
-### 📊 Automated Reports (V1.2)
-- **HTML Report**: Beautiful visual dashboard with savings statistics
-- **AI Code Update**: Structured report for AI to update your code automatically
-- **CSV Export**: Spreadsheet-friendly data for analysis
+## Funcionalidades
 
-### Performance
-- ⚡ **Parallel Processing**: 4x faster with 4 threads (1000 images in ~2min)
-- ⏸️ **Cancel Button**: Stop conversion anytime (Esc key)
-- 📊 **Better Progress**: Live percentage and animated spinner
+- Conversão em lote (WebP/PNG) com progresso e cancelamento.
+- Scan recursivo com filtros e limites.
+- Presets web.
+- Qualidade, resize, crop 1:1, sharpen, brilho.
+- Batch de múltiplos tamanhos.
+- Manter estrutura / substituir no lugar.
+- Reports no app (HTML, AI TXT, CSV, pasta) + histórico.
+- PT-BR/EN-US com detecção automática + troca manual.
+- Tema `system/light/dark`.
+- Drag-and-drop com fallback por botões.
 
-### Visual & Filters
-- 👁️ **Preview Before/After**: See size reduction before converting
-- 🌙 **Dark Mode**: Toggle with Ctrl+D
-- 🎨 **Advanced Filters**: Sharpen and brightness controls
+## Instalação (Runtime)
 
-### Batch & History
-- 📦 **Batch Multiple Sizes**: Generate 800px, 1200px, 1920px from one image
-- ✅ **Batch Resize Guaranteed**: Batch sizes always apply resize rules
-- 📜 **Conversion History**: Track all conversions (last 20)
+Requisitos:
 
-### Quality of Life
-- ⌨️ **9 Keyboard Shortcuts**: Ctrl+O, Ctrl+Enter, Ctrl+D, Esc, Del, Ctrl+Q, Ctrl+L
-- ✅ **Input Validation**: Width 1-10000px
-- 🚨 **Better Error Messages**: Specific errors for common issues
+- Python 3.8+
+- ImageMagick (`convert`)
+- `pywebview`
 
-### V1.0 Features (Maintained)
-- ✅ Recursive folder scan (ignores `node_modules`, `.git`, etc)
-- ✅ 6 web presets (Hero, Blog, Thumbnail, Mobile, Avatar, Original)
-- ✅ Quality slider 60-100% (default: 85%)
-- ✅ Preserves directory structure
-- ✅ Non-destructive mode (never overwrites originals)
-- ✅ Drag & Drop files/folders
-
-## 🚀 Quick Install
+Instalação rápida:
 
 ```bash
-# 1. Clone repository
 git clone https://github.com/ibrumatte/brjoy-webp-optimizer.git
 cd brjoy-webp-optimizer
-
-# 2. Install dependencies
-pip3 install pillow  # Optional: for preview feature
-
-# 3. Install ImageMagick
-sudo apt install imagemagick
-
-# 4. Run
+./install.sh
 ./brjoy-converter
+```
 
-# 5. Optional: run full checks
+## Uso Rápido
+
+1. Adicione arquivos ou use `Escanear Pasta`.
+2. (Opcional) Defina `Filtro de extensões no scan`.
+3. Ajuste formato/qualidade/opções avançadas.
+4. Escolha estratégia de saída:
+   - Manter estrutura
+   - Substituir no lugar (+ backup automático opcional)
+   - Política de conflito de nome
+5. Clique em `Converter`.
+6. Se houver erros, use `Reprocessar Erros`.
+
+## Desenvolvimento
+
+Node é necessário apenas para desenvolvimento/build do frontend.
+
+```bash
+cd frontend
+npm install
+npm run dev
+npm run build
+npm run test
+```
+
+O app desktop carrega `frontend/dist/index.html` localmente (sem servidor externo em runtime).
+
+## Testes
+
+```bash
 ./test.sh
+python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
-## ⌨️ Keyboard Shortcuts
+## Dados Locais
 
-- `Ctrl+O` - Add files
-- `Ctrl+Enter` - Convert
-- `Ctrl+D` - Toggle dark mode
-- `Ctrl+L` - Clear list
-- `Esc` - Cancel conversion
-- `Del` - Remove selected
-- `Ctrl+Q` - Quit
+- `~/.local/share/brjoy-image-converter/settings.json`
+- `~/.local/share/brjoy-image-converter/history.txt`
+- `~/.local/share/brjoy-image-converter/reports/*`
 
-## 📖 Basic Usage
+## License
 
-1. **Scan**: Click "📂 Scan Folder" and select root folder
-2. **Preset**: Choose "Mobile Optimized" (recommended)
-3. **Convert**: Click "✨ Convert (N)"
-4. **Result**: View report and output folder
-
-**Example:**
-```
-Input: /project/public (247 images, 156.8 MB)
-Output: /brjoy-output (247 images, 42.3 MB)
-Savings: 114.5 MB (73%) 🎉
-```
-
-## 📊 Web Presets
-
-| Preset | Dimensions | Quality | Use Case |
-|--------|-----------|---------|----------|
-| Hero Image | 1920x1080 | 85% | Banners, headers |
-| Blog Post | 1200x630 | 85% | Open Graph, articles |
-| Thumbnail | 400x300 | 80% | Listings, grids |
-| Mobile Optimized | 800px | 80% | Mobile-first ⭐ |
-| Avatar/Icon | 256x256 | 90% | Profiles, icons |
-| Original Quality | Keep | 95% | No visual loss |
-
-## 🎓 Full Guide
-
-See [GUIDE.md](GUIDE.md) for:
-- Detailed use cases
-- Advanced settings
-- Troubleshooting
-- Pro tips
-
-## 📋 Roadmap
-
-- **V1** (Current): Desktop Pro - batch conversion + reports ✅
-- **V2** (Q2 2026): CLI for CI/CD
-- **V3** (Q3 2026): `<picture>` snippet generator
-- **V4** (Q4 2026): Cloud integrations (Cloudflare, S3)
-
-## 🐛 Troubleshooting
-
-**ImageMagick not found?**
-```bash
-sudo apt install imagemagick
-```
-
-**Drag & Drop not working?**
-```bash
-pip3 install tkinterdnd2
-```
-
-**Slow conversion?**
-- Reduce quality to 80%
-- Process smaller batches
-
-## 🤝 Contributing
-
-1. Fork the project
-2. Create branch (`git checkout -b feature/new-feature`)
-3. Commit (`git commit -m 'Add new feature'`)
-4. Push (`git push origin feature/new-feature`)
-5. Open Pull Request
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE)
-
-## 💬 Support
-
-- 📧 Email: isac@brjoy.com.br
-- 🐛 Issues: [GitHub Issues](https://github.com/ibrumatte/brjoy-webp-optimizer/issues)
-
----
-
-**⭐ If this project helped you, leave a star on GitHub!**
+MIT - see [LICENSE](LICENSE)

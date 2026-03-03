@@ -1,5 +1,40 @@
 # CHANGELOG
 
+## [1.4.0] - 2026-03-03
+
+### ✨ Novas funcionalidades
+
+- **Filtro de extensões no scan**:
+  - `scan_folder` e `collect_paths` agora aceitam lista de extensões.
+  - Normalização de extensões com/sem ponto (`png` ou `.png`).
+  - Validação no bridge para rejeitar payload inválido.
+- **Retry por item com falha**:
+  - Botão `Reprocessar Erros` no fim da conversão.
+  - Novo job apenas com os itens que falharam.
+- **Política de conflito de nome**:
+  - `version` (sufixo `_1`, `_2`...), `overwrite`, `skip`.
+- **Backup para substituir no lugar**:
+  - `backup_enabled` e `backup_strategy` (`bak` ou `folder`).
+  - Suporte a `.bak` e pasta `_backup`.
+
+### 🧩 UX / Reports
+
+- Aba `Report` com ação `Copiar texto` no preview IA.
+- Densidade da UI fixada em `compact`.
+- Contrato e UI alinhados para configuração de scan/conflito/backup.
+
+### 🧪 Testes
+
+- Novos testes em `tests/test_scan_service.py`.
+- Novos cenários em `tests/test_conversion_engine.py`:
+  - conflito `skip`
+  - conflito `overwrite` + backup `.bak`
+  - conflito `overwrite` + backup `_backup`
+- Novos cenários em `tests/test_desktop_api.py` para validação de extensões.
+- Suíte local executada com sucesso: `30 tests` (`OK`).
+
+---
+
 ## [1.3.0] - 2026-03-03
 
 ### 🛡️ Reliability Hardening
@@ -258,26 +293,3 @@ python3 brjoy-converter
 - Economia média de 73% em testes reais
 
 ---
-
-## Roadmap
-
-### V1.1 (Próxima)
-- [ ] Processamento paralelo (threads)
-- [ ] Botão "Cancelar" durante conversão
-- [ ] Fallback TXT para relatório
-- [ ] Filtros: ignorar <50KB, >10MB
-
-### V2.0 (Q2 2026)
-- [ ] CLI: `brjoy-img optimize ./public`
-- [ ] Integração CI/CD (GitHub Actions)
-- [ ] Modo watch (auto-convert)
-
-### V3.0 (Q3 2026)
-- [ ] Gerador de snippets `<picture>`
-- [ ] Responsive variants (srcset)
-- [ ] Deduplicação por hash
-
-### V4.0 (Q4 2026)
-- [ ] Cloud integrations (Cloudflare, S3)
-- [ ] Integração Cloudflare Images
-- [ ] API REST

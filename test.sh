@@ -40,6 +40,12 @@ else
     exit 1
 fi
 
+if python3 -c "import webview" &> /dev/null; then
+    echo "✅ pywebview installed"
+else
+    echo "⚠️  pywebview not found (Web UI fallback may fail)"
+fi
+
 if python3 -c "import PIL" &> /dev/null; then
     echo "✅ Pillow installed (preview enabled)"
 else
@@ -49,7 +55,7 @@ fi
 # Test 3: Functional scripts
 echo ""
 echo "Test 3: Running functional scripts..."
-if python3 test_features.py && python3 test-ai-report.py && python3 test-conversion.py && python3 test-core-logic.py; then
+if python3 test_features.py && python3 test-ai-report.py && python3 test-conversion.py && python3 test-core-logic.py && python3 -m unittest discover -s tests -p 'test_*.py'; then
     echo "✅ Functional scripts OK"
 else
     echo "❌ Functional scripts failed"

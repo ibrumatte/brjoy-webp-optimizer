@@ -40,6 +40,9 @@ class TestCoreLogic(unittest.TestCase):
         obj.arquivos = []
         obj.pasta_origem = None
         obj.pasta_saida = DummyVar("")
+        obj.reports_dir = Path(tempfile.gettempdir()) / "brjoy-reports-tests"
+        obj.reports_dir.mkdir(parents=True, exist_ok=True)
+        obj.report_items = {}
         obj.atualizar_lista = lambda: None
         return obj
 
@@ -75,7 +78,7 @@ class TestCoreLogic(unittest.TestCase):
         self.assertIn("-resize", cmd)
         self.assertIn("800x>", cmd)
 
-    def test_resolve_output_folder_preserves_structure(self):
+    def test_resolve_output_folder_uses_original_parent_when_preserving_structure(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             source_root = tmp_path / "source"
@@ -92,8 +95,7 @@ class TestCoreLogic(unittest.TestCase):
             config = {"substituir_no_lugar": False, "manter_estrutura": True}
 
             target = obj._resolve_output_folder(info, output_root, config)
-            self.assertEqual(target, output_root / "assets" / "home")
-            self.assertTrue(target.exists())
+            self.assertEqual(target, image.parent)
 
     def test_reserve_output_path_avoids_collision(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -147,7 +149,19 @@ class TestCoreLogic(unittest.TestCase):
 
             self.assertEqual(out, img.parent)
 
-    def test_get_session_folder_uses_custom_output_when_defined(self):
+    def test_get_session_folder_uses_input_parent_for_preserve_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            img = tmp_path / "photo.jpg"
+            img.write_bytes(b"x")
+
+            obj = self.make_obj()
+            config = {"substituir_no_lugar": False, "manter_estrutura": True}
+            out = obj._get_session_folder([{"path": str(img)}], config)
+
+            self.assertEqual(out, img.parent)
+
+    def test_get_session_folder_uses_custom_output_when_not_in_place(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             img = tmp_path / "photo.jpg"
@@ -156,11 +170,129 @@ class TestCoreLogic(unittest.TestCase):
             custom = tmp_path / "custom-out"
             obj = self.make_obj()
             obj.pasta_saida = DummyVar(str(custom))
-            config = {"substituir_no_lugar": True}
+            config = {"substituir_no_lugar": False, "manter_estrutura": False}
             out = obj._get_session_folder([{"path": str(img)}], config)
 
             self.assertEqual(out, custom)
             self.assertTrue(out.exists())
+
+    def test_create_report_folder_inside_global_reports_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            obj = self.make_obj()
+            obj.reports_dir = tmp_path / "reports"
+            output_folder = tmp_path / "output-folder"
+            output_folder.mkdir()
+
+            folder = obj._create_report_folder(output_folder)
+
+            self.assertTrue(folder.exists())
+            self.assertEqual(folder.parent, obj.reports_dir)
+
+    def test_generate_report_saves_files_outside_output_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            obj = self.make_obj()
+            obj.reports_dir = tmp_path / "reports"
+            obj.reports_dir.mkdir(parents=True, exist_ok=True)
+            output_folder = tmp_path / "project-output"
+            output_folder.mkdir()
+
+            details = [{
+                "file": "assets/hero.png",
+                "before": 2000,
+                "after": 1000,
+                "saved": 1000,
+                "percent": 50.0,
+            }]
+
+            metadata = obj._generate_report(
+                output_folder=output_folder,
+                details=details,
+                duration=1.5,
+                success=1,
+                errors=0,
+                total=1,
+                formato="webp",
+                source_folders=[str(output_folder)],
+            )
+
+            self.assertIsNotNone(metadata)
+            report_folder = Path(metadata["report_folder"])
+            self.assertEqual(report_folder.parent, obj.reports_dir)
+            self.assertTrue((report_folder / "conversion-report.html").exists())
+            self.assertTrue((report_folder / "AI-CODE-UPDATE.txt").exists())
+            self.assertTrue((report_folder / "conversions.csv").exists())
+            self.assertTrue((report_folder / "report-meta.json").exists())
+            self.assertFalse((output_folder / "conversion-report.html").exists())
+            self.assertEqual(metadata["source_folders"], [str(output_folder)])
+
+    def test_generate_ai_report_preserves_directory_structure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            obj = self.make_obj()
+            report_folder = tmp_path / "reports" / "session"
+            report_folder.mkdir(parents=True, exist_ok=True)
+
+            details = [{
+                "file": "assets/teste/daisi.png",
+                "before": 2000,
+                "after": 1000,
+                "saved": 1000,
+                "percent": 50.0,
+            }]
+            paths = obj._generate_ai_report(report_folder, details, "webp")
+
+            self.assertIsNotNone(paths)
+            ai_content = (report_folder / "AI-CODE-UPDATE.txt").read_text(encoding="utf-8")
+            self.assertIn("assets/teste/daisi.png → assets/teste/daisi.webp", ai_content)
+            self.assertIn("images/assets/teste/daisi.webp", ai_content)
+
+    def test_generate_report_tracks_multiple_source_folders(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            obj = self.make_obj()
+            obj.reports_dir = tmp_path / "reports"
+            obj.reports_dir.mkdir(parents=True, exist_ok=True)
+            output_folder = tmp_path / "project-output"
+            output_folder.mkdir()
+
+            details = [
+                {
+                    "file": "assets/a.png",
+                    "source_path": str(tmp_path / "site-a" / "assets" / "a.png"),
+                    "output_paths": [str(tmp_path / "site-a" / "assets" / "a.webp")],
+                    "before": 2000,
+                    "after": 1000,
+                    "saved": 1000,
+                    "percent": 50.0,
+                },
+                {
+                    "file": "assets/b.png",
+                    "source_path": str(tmp_path / "site-b" / "assets" / "b.png"),
+                    "output_paths": [str(tmp_path / "site-b" / "assets" / "b.webp")],
+                    "before": 2000,
+                    "after": 1000,
+                    "saved": 1000,
+                    "percent": 50.0,
+                },
+            ]
+
+            source_folders = [str(tmp_path / "site-a" / "assets"), str(tmp_path / "site-b" / "assets")]
+            metadata = obj._generate_report(
+                output_folder=output_folder,
+                details=details,
+                duration=2.5,
+                success=2,
+                errors=0,
+                total=2,
+                formato="webp",
+                source_folders=source_folders,
+            )
+
+            self.assertEqual(sorted(metadata["source_folders"]), sorted(source_folders))
+            report_html = Path(metadata["html_report"]).read_text(encoding="utf-8")
+            self.assertIn("Pasta(s) de origem (2)", report_html)
 
     def test_validate_config_rejects_height_without_width(self):
         obj = self.make_obj()

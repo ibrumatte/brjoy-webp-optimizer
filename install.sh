@@ -1,69 +1,83 @@
 #!/bin/bash
-# BrJoy WebP Optimizer - Quick Install Script
+# BrJoy WebP Optimizer - Installer (Desktop WebView runtime)
 
 set -e
 
-echo "🚀 BrJoy WebP Optimizer - Quick Install"
-echo "========================================"
-echo ""
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT_DIR"
 
-# Check Python
-if ! command -v python3 &> /dev/null; then
-    echo "❌ Python 3 not found. Please install Python 3.8+"
+echo "BrJoy WebP Optimizer - Install"
+echo "=============================="
+
+auto_install_python_pkg() {
+  local pkg="$1"
+  local import_name="$2"
+
+  if python3 -c "import ${import_name}" >/dev/null 2>&1; then
+    echo "OK: ${pkg} already installed"
+    return
+  fi
+
+  read -r -p "Install Python package '${pkg}' now? (y/n) " reply
+  if [[ "$reply" =~ ^[Yy]$ ]]; then
+    python3 -m pip install --user "$pkg"
+    echo "OK: ${pkg} installed"
+  else
+    echo "SKIP: ${pkg} not installed"
+  fi
+}
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "ERROR: Python 3.8+ is required"
+  exit 1
+fi
+
+echo "OK: $(python3 --version)"
+
+if ! command -v convert >/dev/null 2>&1; then
+  echo "WARN: ImageMagick not found"
+  read -r -p "Install ImageMagick with apt? (y/n) " reply
+  if [[ "$reply" =~ ^[Yy]$ ]]; then
+    sudo apt update
+    sudo apt install -y imagemagick
+  else
+    echo "ERROR: ImageMagick is required"
     exit 1
+  fi
 fi
 
-PYTHON_VERSION=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1,2)
-echo "✅ Python $PYTHON_VERSION found"
+echo "OK: ImageMagick found"
 
-# Check ImageMagick
-if ! command -v convert &> /dev/null; then
-    echo "⚠️  ImageMagick not found"
-    read -p "Install ImageMagick? (y/n) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        sudo apt update
-        sudo apt install -y imagemagick
-        echo "✅ ImageMagick installed"
+auto_install_python_pkg "pywebview" "webview"
+auto_install_python_pkg "pillow" "PIL"
+auto_install_python_pkg "tkinterdnd2" "tkinterdnd2"
+
+if [ ! -f "$ROOT_DIR/frontend/dist/index.html" ]; then
+  echo "WARN: frontend bundle not found at frontend/dist/index.html"
+  if command -v npm >/dev/null 2>&1; then
+    read -r -p "Build frontend bundle now (requires npm registry access)? (y/n) " reply
+    if [[ "$reply" =~ ^[Yy]$ ]]; then
+      if [ -f "$ROOT_DIR/frontend/package-lock.json" ]; then
+        npm ci --prefix "$ROOT_DIR/frontend"
+      else
+        npm install --prefix "$ROOT_DIR/frontend"
+      fi
+      npm run build --prefix "$ROOT_DIR/frontend"
+      echo "OK: frontend bundle built"
     else
-        echo "❌ ImageMagick required. Install manually: sudo apt install imagemagick"
-        exit 1
+      echo "SKIP: bundle build"
     fi
+  else
+    echo "SKIP: npm not found (only needed for development/build)"
+  fi
 else
-    echo "✅ ImageMagick found"
+  echo "OK: frontend bundle exists"
 fi
 
-# Install Pillow (optional)
-if ! python3 -c "import PIL" &> /dev/null; then
-    echo "⚠️  Pillow not found (optional for preview feature)"
-    read -p "Install Pillow? (y/n) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        pip3 install pillow
-        echo "✅ Pillow installed"
-    else
-        echo "⏭️  Skipping Pillow (preview feature disabled)"
-    fi
-else
-    echo "✅ Pillow found"
-fi
+chmod +x "$ROOT_DIR/brjoy-converter"
+echo "OK: brjoy-converter is executable"
 
-# Make executable
-chmod +x brjoy-converter
-echo "✅ Made brjoy-converter executable"
-
-echo ""
-echo "🎉 Installation complete!"
-echo ""
-echo "📖 Quick Start:"
-echo "   ./brjoy-converter"
-echo ""
-echo "⌨️  Keyboard Shortcuts:"
-echo "   Ctrl+O      - Add files"
-echo "   Ctrl+Enter  - Convert"
-echo "   Ctrl+D      - Dark mode"
-echo "   Esc         - Cancel"
-echo ""
-echo "📚 Documentation: README.md"
-echo "🐛 Issues: https://github.com/ibrumatte/brjoy-webp-optimizer/issues"
-echo ""
+echo
+echo "Install complete"
+echo "Run: ./brjoy-converter"
+echo "Note: Runtime needs Python + ImageMagick + pywebview. Node is dev/build only."

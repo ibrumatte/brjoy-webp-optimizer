@@ -21,12 +21,41 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
     
     - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y imagemagick
-        pip install pillow
+        pip install pillow pywebview
+
+    - name: Install frontend dependencies
+      run: |
+        if [ -f frontend/package-lock.json ]; then
+          npm ci --prefix frontend
+        else
+          npm install --prefix frontend
+        fi
+
+    - name: Frontend checks
+      run: |
+        npm run build --prefix frontend
+        npm run test --prefix frontend
+
+    - name: Frontend bundle and bridge smoke
+      run: |
+        test -f frontend/dist/index.html
+        python3 - <<'PY'
+        from app.bridge.desktop_api import DesktopAPI
+        api = DesktopAPI()
+        ping = api.ping()
+        assert ping.get("ok") is True
+        print("bridge-smoke-ok")
+        PY
     
     - name: Run tests
       run: |

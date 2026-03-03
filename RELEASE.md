@@ -1,56 +1,40 @@
-# 🚀 BrJoy WebP Optimizer V1.3.0 - Release Notes
+# 🚀 BrJoy WebP Optimizer V1.4.0 - Release Notes
 
 **Date:** 2026-03-03  
 **Status:** ✅ Ready to publish
 
 ---
 
-## What Changed in V1.3.0
+## What Changed in V1.4.0
 
-### Reliability & Correctness
-- Unified file model across all ingestion paths (scan, picker, drag/drop).
-- Thread-safe conversion flow with UI updates synchronized through Tk main loop.
-- Fixed `Ctrl+L` clear-list shortcut.
-- Responsive cancellation during batch processing.
-- Canceled jobs are now reported as `skipped` (not errors).
+### Safety & Recovery
+- Added backup support for `replace in place`:
+  - `.bak` file strategy
+  - `_backup` folder strategy
+- Added output name conflict policies:
+  - `version` (default)
+  - `overwrite`
+  - `skip`
 
-### Output Safety
-- Real preserve-structure behavior in output folders.
-- Output collision protection (`_1`, `_2`, ... suffixes).
-- Batch widths always apply resize rules.
-- Replace-in-place no longer creates unnecessary session folders.
+### Conversion Flow
+- Added `Retry Errors` button to reprocess only failed items.
+- Retry starts a new conversion job with only errored entries.
 
-### UX & Platform
-- Cross-platform open-path support (Linux/macOS/Windows).
-- Better drag/drop behavior in dark mode.
-- Recursive folder add with limits and ignored directories.
-- Pre-flight validation for invalid resize/batch combinations.
+### Scan Quality
+- Added extension filter for scan and collected paths.
+- Input accepts `png,jpg,webp` or `.png,.jpg,.webp`.
 
-### Reporting & Security
-- HTML report now escapes file/folder values.
-- CSV export hardening against formula injection.
+### Report UX
+- AI report preview now includes `Copy Text` action in Report tab.
 
-### Tests & CI
-- New non-GUI unit suite: `test-core-logic.py`.
-- Stronger `test.sh` with functional script execution and strict shell mode.
-- GitHub Actions updated to:
-  - `checkout@v4`
-  - `setup-python@v5`
-  - Python matrix: 3.8 and 3.12
-
----
-
-## Validation Snapshot
-
-Executed locally on 2026-03-03:
-
-```bash
-python3 -m py_compile brjoy-converter conversor_gui.py test-conversion.py test-core-logic.py
-python3 test-core-logic.py
-bash ./test.sh
-```
-
-Result: ✅ All checks passed (including 9 unit tests in `test-core-logic.py`).
+### Tests & Contract Coverage
+- Added `tests/test_scan_service.py`.
+- Added new conversion engine scenarios for conflict/backup behavior.
+- Added desktop API validation tests for invalid extension payloads.
+- Local validation snapshot:
+  - `python3 -m unittest discover -s tests -p 'test_*.py'` ✅ (`30 tests`)
+  - `python3 -m py_compile app/core/conversion_engine.py app/bridge/desktop_api.py app/services/scan_service.py` ✅
+  - `node --check frontend/dist/assets/app.js` ✅
 
 ---
 
@@ -64,22 +48,25 @@ git pull
 
 ---
 
-## Files Added/Updated (V1.3.0)
+## Files Added/Updated (V1.4.0)
 
-- `brjoy-converter`
-- `launcher.sh`
-- `conversor_gui.py`
-- `test-core-logic.py` (new)
-- `test-conversion.py`
-- `test.sh`
-- `.github/workflows/test.yml`
+- `app/services/scan_service.py`
+- `app/bridge/desktop_api.py`
+- `app/core/conversion_engine.py`
+- `frontend/dist/index.html`
+- `frontend/dist/assets/app.js`
+- `tests/test_scan_service.py` (new)
+- `tests/test_conversion_engine.py`
+- `tests/test_desktop_api.py`
 - `README.md`
 - `CHANGELOG.md`
+- `GITHUB_RELEASE.md`
+- `QUICKSTART.md`
+- `GUIDE.md`
 
 ---
 
 ## Known Follow-ups
 
-- Optional: modernize `conversor_gui.py` legacy flow to share the same core engine.
-- Optional: add integration test for cancelation race conditions.
-
+- Mirror these runtime (`frontend/dist`) changes back to `frontend/src` to keep source and bundle 100% synchronized.
+- Add E2E smoke covering `Retry Errors` with mixed success/failure set.

@@ -14,15 +14,23 @@ class ConversorHEIC:
         self.root.resizable(False, False)
         
         # Definir ícone da janela
+        self._icon_image = None
         try:
-            icon_path = Path.home() / ".local/share/brjoy-image-converter/icon.webp"
-            if icon_path.exists():
-                # Converter webp para formato que Tkinter aceita
-                subprocess.run(['convert', str(icon_path), '/tmp/brjoy_icon.png'], 
-                             capture_output=True)
-                icon = tk.PhotoImage(file='/tmp/brjoy_icon.png')
-                self.root.iconphoto(True, icon)
-        except:
+            icon_candidates = [
+                Path.home() / ".local/share/brjoy-image-converter/icon.webp",
+                Path(__file__).resolve().parent / "icon.webp",
+                Path.home() / ".local/share/brjoy-image-converter/icon.png",
+            ]
+            for icon_path in icon_candidates:
+                if not icon_path.exists():
+                    continue
+                try:
+                    self._icon_image = tk.PhotoImage(file=str(icon_path))
+                    self.root.iconphoto(True, self._icon_image)
+                    break
+                except tk.TclError:
+                    continue
+        except Exception:
             pass
         
         self.formato = tk.StringVar(value="webp")
