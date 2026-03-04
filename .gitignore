@@ -7,12 +7,9 @@ __pycache__/
 *.egg
 *.egg-info/
 dist/
-!frontend/dist/
-!frontend/dist/**
 frontend/node_modules/
 build/
 .vscode/
 .idea/
 *.log
 .DS_Store
-__pycache__/

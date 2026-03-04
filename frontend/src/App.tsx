@@ -39,7 +39,6 @@ export default function App() {
   const [bootstrap, setBootstrap] = useState<AppBootstrap | null>(null)
   const [locale, setLocale] = useState<LocaleCode>('pt-BR')
   const [theme, setTheme] = useState<ThemeMode>('system')
-  const [density, setDensity] = useState<'compact'>('compact')
   const [systemPrefersDark, setSystemPrefersDark] = useState(false)
   const [files, setFiles] = useState<FileItem[]>([])
   const [config, setConfig] = useState<ConversionConfig>(defaultConfig)
@@ -81,10 +80,6 @@ export default function App() {
         setBootstrap(data)
         setLocale(data.preferences.locale || data.locale)
         setTheme(data.preferences.theme || 'system')
-        setDensity('compact')
-        if (data.preferences.uiDensity !== 'compact') {
-          await desktopApi.setPreferences({ uiDensity: 'compact' })
-        }
         const presetFromPrefs = data.preferences.lastPreset || ''
         setSelectedPreset(presetFromPrefs)
         if (presetFromPrefs && data.presets[presetFromPrefs]) {
@@ -287,15 +282,6 @@ export default function App() {
     }
   }
 
-  async function handleDensityChange(nextDensity: 'compact') {
-    setDensity(nextDensity)
-    try {
-      await desktopApi.setPreferences({ uiDensity: nextDensity })
-    } catch (error) {
-      notifyError('notice.preferencesSaveFailed', error)
-    }
-  }
-
   async function handleCollectPaths(paths: string[]) {
     if (!paths.length) return
     try {
@@ -379,12 +365,10 @@ export default function App() {
       <TopBar
         locale={locale}
         theme={theme}
-        density={density}
         currentTab={tab}
         onTabChange={setTab}
         onLocaleChange={handleLocaleChange}
         onThemeChange={handleThemeChange}
-        onDensityChange={handleDensityChange}
       />
 
       {notice && (
